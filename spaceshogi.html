@@ -1,0 +1,2471 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TINKU SHOGI</title>
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Noto+Sans+JP:wght@400;700&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --primary-gold: #d4af37;
+            --dark-bg: #121212;
+            --card-bg: #1e1e1e;
+            --board-border: #5d2e0a;
+            --glass: rgba(255, 255, 255, 0.05);
+        }
+
+        body {
+            background-color: var(--dark-bg);
+            color: #e0e0e0;
+            text-align: center;
+            font-family: 'Inter', 'Noto Sans JP', sans-serif;
+            margin: 0;
+            padding: 5px;
+            box-sizing: border-box;
+            background-image: radial-gradient(circle at 50% 50%, #1a1a1a 0%, #0a0a0a 100%);
+            overflow-x: hidden;
+        }
+
+        #leaf-canvas {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 10; /* Por encima del tablero para ver efectos de promoción */
+            pointer-events: none;
+        }
+
+        #game-box {
+            margin: 15px auto;
+            width: min(650px, 100%);
+            background: #1a1a1a;
+            padding: 15px;
+            border: 2px solid var(--primary-gold);
+            border-radius: 12px;
+            position: relative;
+            z-index: 1;
+            box-sizing: border-box;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(212, 175, 55, 0.1);
+        }
+
+        #menu {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(10, 10, 10, 0.98);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            overflow-y: auto; /* コンテンツが多い場合にスクロール可能にする */
+            padding: 10px; /* 端に余裕を持たせる */
+            box-sizing: border-box;
+        }
+
+        .menu-btn {
+            margin: 5px; /* マージン削減 */
+            padding: 8px 16px; /* パディング削減 */
+            font-size: 16px; /* フォントサイズ微調整 */
+            font-weight: 700;
+            cursor: pointer;
+            border: 1px solid var(--primary-gold);
+            background: linear-gradient(145deg, #2a2a2a, #1a1a1a);
+            color: var(--primary-gold);
+            border-radius: 8px;
+            width: 260px; /* 幅を少し狭める */
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .menu-btn:hover {
+            background: var(--primary-gold);
+            color: #000;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(212, 175, 55, 0.3);
+        }
+
+        #status-bar {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #fff;
+        }
+
+        #msg {
+            font-size: 16px;
+            color: #ffd700;
+            margin: 5px 0;
+            min-height: 1.5em;
+            background: #111;
+            padding: 5px;
+            border-radius: 5px;
+        }
+
+        .grid {
+            display: grid;
+            /* サイズ調整: 100vhに収めるために少し小さくする */
+            grid-template-columns: repeat(9, min(42px, calc((100vh - 300px) / 9))) 20px; /* 右側に座標用の列を移動 */
+            grid-template-rows: 20px repeat(9, min(42px, calc((100vh - 300px) / 9))); /* 上側に座標用の行を追加 */
+            gap: 1px;
+            justify-content: center;
+            background: #8b4513;
+            padding: 4px;
+            margin: 5px 0;
+            border: 3px solid #5d2e0a;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+        }
+
+        .cell, .coord-cell {
+            /* PC: calc based on height, Mobile: calc based on width */
+            width: min(42px, calc((100vh - 300px) / 9));
+            height: min(42px, calc((100vh - 300px) / 9));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: clamp(12px, 3vw, 20px);
+            font-weight: bold;
+        }
+
+        /* Mobile Responsive Adjustments */
+        @media (max-width: 768px) {
+            .grid {
+                /* Make board fit width on mobile */
+                grid-template-columns: repeat(9, min(10vw, 38px)) 15px;
+                grid-template-rows: 15px repeat(9, min(10vw, 38px));
+                gap: 0; /* Remove gap to save space */
+                padding: 2px;
+                border-width: 2px;
+            }
+            
+            .cell, .coord-cell {
+                width: min(10vw, 38px);
+                height: min(10vw, 38px);
+                font-size: 10px; /* Smaller font */
+            }
+
+            .coord-h { height: 15px; width: min(10vw, 38px); font-size: 9px; }
+            .coord-v { width: 15px; height: min(10vw, 38px); font-size: 9px; }
+            .coord-corner { width: 15px; height: 15px; }
+
+            .hand {
+                width: 95%; /* Use full width */
+                gap: 4px;
+                padding: 4px;
+                margin: 5px auto;
+                overflow-x: auto; /* Allow scroll if too many pieces */
+                justify-content: flex-start; /* Align left */
+            }
+
+            .card {
+                width: 38px;
+                height: 52px; /* Smaller cards */
+                margin-top: 5px;
+            }
+            
+            .card img {
+                transform: scale(2.0); /* Slightly smaller scale */
+                margin-bottom: 2px;
+            }
+            
+            .card span {
+                font-size: 8px;
+            }
+
+            #teaching-ui {
+                /* Move to bottom or make it a drawer on mobile */
+                top: auto;
+                bottom: 10px;
+                right: 10px;
+                left: 10px;
+                width: auto;
+                max-height: 150px;
+                overflow-y: auto;
+            }
+
+            h1#ui-title { font-size: 20px !important; margin-bottom: 5px !important; }
+            p#ui-cpu-title { font-size: 14px !important; }
+            
+            #menu {
+                width: 90%;
+                padding: 20px;
+            }
+        }
+
+        .cell {
+            background-color: #d2b48c;
+            color: #000;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+            border-radius: 2px;
+        }
+
+        .coord-cell {
+            background: transparent;
+            color: #d4af37; /* Gold color for coordinates */
+            font-size: 12px;
+            pointer-events: none;
+        }
+        
+        /* Top row coordinates (horizontal) */
+        .coord-h {
+            height: 20px;
+            width: min(42px, calc((100vh - 300px) / 9));
+        }
+        
+        /* Left column coordinates (vertical) */
+        .coord-v {
+            width: 20px;
+            height: min(42px, calc((100vh - 300px) / 9));
+        }
+        
+        /* Corner spacer */
+        .coord-corner {
+            width: 20px;
+            height: 20px;
+        }
+
+        .cell.p1 {
+            background-color: #ff9999;
+            box-shadow: inset 0 0 10px rgba(255, 0, 0, 0.2);
+        }
+
+        .cell.p2 {
+            background-color: #99ccff;
+            box-shadow: inset 0 0 10px rgba(0, 0, 255, 0.2);
+        }
+
+        .cell:active {
+            transform: scale(0.95);
+        }
+
+        .cell.valid {
+            box-shadow: inset 0 0 0 3px #ffff00, 0 0 12px #ffff00;
+            box-sizing: border-box;
+            animation: pulse-valid 0.7s ease-in-out infinite alternate;
+        }
+
+        @keyframes pulse-valid {
+            from {
+                box-shadow: inset 0 0 0 3px #ffff00, 0 0 5px #ffff00;
+            }
+
+            to {
+                box-shadow: inset 0 0 0 4px #fff700, 0 0 20px #ffe500;
+            }
+        }
+
+        .cell.promoted {
+            color: #ffd700;
+            text-shadow: 2px 2px 3px #000;
+        }
+
+        .hand {
+            display: flex;
+            justify-content: center;
+            gap: 4px;
+            margin: 4px 0;
+            flex-wrap: wrap;
+            background: #1a1a1a;
+            padding: 5px;
+            border-radius: 5px;
+            width: 100%;
+            max-width: 480px; /* 幅制限で1行に収まりやすくする */
+        }
+
+        .card {
+            width: 48px; /* 少し幅広げる */
+            height: 64px; /* 少し高さ広げる */
+            background: linear-gradient(135deg, #ffffff, #f0f0f0);
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #333;
+            transition: all 0.2s;
+            padding: 0;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            position: relative;
+            overflow: visible;
+            margin-top: 15px; /* マージンを増やしてはみ出し対応強化 */
+        }
+
+        .card:hover {
+            z-index: 100;
+        }
+
+        .card img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            pointer-events: none;
+            transform: scale(2.6); /* さらに拡大 (2.2 -> 2.6) */
+            filter: drop-shadow(0px 3px 5px rgba(0, 0, 0, 0.7));
+            margin-bottom: 6px;
+        }
+
+        .card span {
+            font-size: 9px; /* 文字サイズ微増 */
+            color: #333;
+            font-weight: bold;
+            position: absolute;
+            bottom: -2px; /* 下端に配置 */
+            width: 100%;
+            text-align: center;
+            background: rgba(255,255,255,0.85); /* 読みやすくする */
+            border-radius: 0 0 4px 4px;
+            padding: 1px 0;
+            z-index: 2; /* 画像より手前 */
+        }
+
+        .card.selected {
+            border: 2px solid #00ff00;
+            background: #e6ffe6;
+            transform: scale(1.1);
+            z-index: 10;
+            box-shadow: 0 0 8px #00ff00;
+        }
+
+        .card.used {
+            background-color: #444;
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        .card.locked {
+            opacity: 0.4;
+            background-color: #2a2a2a;
+            cursor: not-allowed;
+            filter: grayscale(100%);
+        }
+
+        .card.locked span {
+            color: #ff4444 !important;
+            font-size: 11px;
+            bottom: 2px !important;
+        }
+
+        #lang-selector {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            z-index: 200;
+            background: #1a1a1a;
+            color: var(--primary-gold);
+            border: 1px solid var(--primary-gold);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            outline: none;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        #lang-selector:hover {
+            background: #2a2a2a;
+        }
+
+        #rule-btn {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 200;
+            background: #333;
+            color: #ffd700;
+            border: 1px solid #d4af37;
+            padding: 5px 15px;
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        #rule-btn:hover {
+            background: #d4af37;
+            color: #000;
+        }
+
+        #re-btn {
+            margin-top: 15px;
+            padding: 12px 25px;
+            cursor: pointer;
+            background: #d4af37;
+            border: none;
+            font-weight: bold;
+            font-size: 18px;
+            border-radius: 5px;
+            color: #000;
+        }
+
+        .piece-img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            pointer-events: none;
+            transform: scale(2.5);
+            /* マス枠から大胆にはみ出すレベルで拡大(2.5倍) */
+            filter: drop-shadow(0px 2px 4px rgba(0, 0, 0, 0.6));
+            /* 駒が背景に埋もれないように影をつける */
+        }
+
+        .cell.p2 .piece-img {
+            transform: rotate(180deg) scale(2.5);
+        }
+
+        /* オンライン用追加スタイル */
+        #online-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 150;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            border-radius: 8px;
+        }
+
+        .online-input {
+            padding: 10px;
+            font-size: 16px;
+            width: 250px;
+            margin: 10px;
+            background: #222;
+            color: #fff;
+            border: 1px solid #d4af37;
+        }
+
+        #my-id-display {
+            background: #111;
+            padding: 10px;
+            border: 1px dashed #ffd700;
+            margin: 10px;
+            font-family: monospace;
+            cursor: pointer;
+            word-break: break-all;
+            max-width: 80%;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="leaf-canvas"></canvas>
+    <button id="rule-btn" onclick="openRule()">ルール (Rules)</button>
+    <select id="lang-selector" onchange="changeLang(this.value)">
+        <option value="ja">NIHONGO</option>
+        <option value="en">English</option>
+        <option value="es">Español</option>
+        <option value="pt">Português</option>
+    </select>
+
+    <div id="game-box">
+        <!-- Log Overlay -->
+        <div id="log-overlay" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); width:300px; max-height:400px; background:rgba(0,0,0,0.95); border:2px solid #00ffff; border-radius:10px; z-index:200; padding:15px; box-shadow: 0 0 20px rgba(0,255,255,0.3); overflow:hidden; flex-direction:column;">
+            <div id="log-title" style="color:#00ffff; font-size:18px; font-weight:bold; margin-bottom:10px; text-align:center;"></div>
+            <div id="log-content" style="flex:1; overflow-y:auto; color:#fff; font-size:13px; line-height:1.6; margin-bottom:15px; padding-right:5px;"></div>
+            <button class="menu-btn" id="log-close-btn" style="width:100%; padding:8px; font-size:14px;" onclick="document.getElementById('log-overlay').style.display='none'">Close</button>
+        </div>
+
+        <!-- Teaching Mode Overlay (Adjusted Position) -->
+        <div id="teaching-ui" style="display:none; position:absolute; top:20px; right:-280px; width:260px; background:rgba(0,0,0,0.9); border:2px solid #00ff00; padding:15px; border-radius:10px; z-index:100; box-shadow: 0 0 15px rgba(0,255,0,0.3);">
+            <div id="coach-msg" style="color:#fff; font-size:14px; margin-bottom:0; min-height:60px; line-height:1.4; white-space: pre-wrap;"></div>
+            <!-- CPU Thought Area -->
+            <div id="cpu-thought-ui" style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #444; display: none;">
+                <div id="cpu-thought-title" style="color: #00ffff; font-size: 12px; font-weight: bold; margin-bottom: 5px;"></div>
+                <div id="cpu-thought-content" style="color: #ccc; font-size: 11px; line-height: 1.4;"></div>
+            </div>
+        </div>
+
+        <div id="menu">
+            <h1 id="ui-title" style="color:#d4af37; font-size: 28px; margin-bottom: 10px;">ティンク将棋</h1>
+            <p id="ui-cpu-title" style="color: #ffd700; font-size: 18px; margin-bottom: 5px; font-weight:bold;">一人で対局
+                (vs CPU)</p>
+            <div style="margin-bottom: 10px; color: #fff;">
+                <span id="ui-cpu-side">あなたの陣営: </span>
+                <select id="cpu-side-sel"
+                    style="padding: 5px; font-size: 14px; background: #333; color: #fff; border: 1px solid #d4af37;">
+                    <option value="p2" id="ui-side-sente">SENTE (先手・赤)</option>
+                    <option value="p1" id="ui-side-gote">GOTE (後手・青)</option>
+                </select>
+            </div>
+            <div
+                style="display: flex; gap: 5px; flex-wrap: wrap; justify-content: center; max-width: 500px; margin-bottom: 10px;">
+                <button class="menu-btn" id="ui-lv1"
+                    style="width: auto; padding: 8px 12px; font-size: 14px; margin: 3px;"
+                    onclick="startGame('cpu', 1)">Lv.1(無鉄砲)</button>
+                <button class="menu-btn" style="width: auto; padding: 8px 12px; font-size: 14px; margin: 3px;"
+                    onclick="startGame('cpu', 2)" id="ui-lv2">Lv.2(王狙撃)</button>
+                <button class="menu-btn" style="width: auto; padding: 8px 12px; font-size: 14px; margin: 3px;"
+                    onclick="startGame('cpu', 3)" id="ui-lv3">Lv.3(標準)</button>
+                <button class="menu-btn" style="width: auto; padding: 8px 12px; font-size: 14px; margin: 3px;"
+                    onclick="startGame('cpu', 4)" id="ui-lv4">Lv.4(冷徹)</button>
+                <button class="menu-btn" id="ui-lv5"
+                    style="width: auto; padding: 8px 12px; font-size: 14px; margin: 3px;"
+                    onclick="startGame('cpu', 5)">Lv.5(至高)</button>
+            </div>
+            
+            <div style="margin-bottom: 15px; text-align: center;">
+                <label style="color: #00ff00; font-size: 16px; cursor: pointer; display:block; margin-bottom:5px;">
+                    <input type="checkbox" id="teaching-mode-toggle" style="transform: scale(1.3); margin-right: 8px;" onchange="toggleTeachingOptions()">
+                    <span id="ui-teaching-mode">指導対局モード (Teaching Mode)</span>
+                </label>
+                <!-- Difficulty Selection -->
+                <div id="teaching-diff-ui" style="display:none; color:#00ff00; font-size:14px;">
+                    <span id="ui-teach-diff">指導難易度:</span>
+                    <label style="margin:0 5px; cursor:pointer;"><input type="radio" name="teach-diff" value="easy" checked> <span id="ui-diff-easy">易しめ</span></label>
+                    <label style="margin:0 5px; cursor:pointer;"><input type="radio" name="teach-diff" value="hard"> <span id="ui-diff-hard">難しめ</span></label>
+                </div>
+            </div>
+
+            <button class="menu-btn" id="ui-pvp" style="margin-top: 5px;" onclick="startGame('pvp')">二人で対局
+                (2P)</button>
+            <button class="menu-btn" id="ui-online" style="margin-top: 5px; border-color: #00ffff; color: #00ffff;"
+                onclick="showOnlineMenu()">オンラインで対局 (Online)</button>
+            <p id="ui-desc" style="color: #ccc; margin-top: 15px; margin-bottom: 10px; font-size: 14px;">全八種類の駒を使い切り、盤上を制せ</p>
+        </div>
+
+        <div id="online-overlay">
+            <h2 id="ui-ol-title">オンライン対局</h2>
+            <div id="ol-setup">
+                <p id="ui-ol-wait">自分のID（クリックでコピー）:</p>
+                <div id="my-id-display" onclick="copyMyId()">Loading...</div>
+                <hr style="width: 80%; border: 0.5px solid #444; margin: 20px 0;">
+                <p id="ui-ol-connect">相手のIDを入力して接続:</p>
+                <input type="text" id="peer-id-input" class="online-input" placeholder="Peer ID...">
+                <button class="menu-btn" id="ui-ol-join-btn" style="width: 200px; padding: 10px;"
+                    onclick="joinGame()">接続する (Connect)</button>
+            </div>
+            <div id="ol-connecting" style="display:none;">
+                <p id="ui-ol-loading">接続中...</p>
+            </div>
+            <button class="menu-btn" id="ui-ol-back"
+                style="width: 150px; padding: 5px; font-size: 14px; margin-top: 30px;" onclick="hideOnlineMenu()">戻る
+                (Back)</button>
+        </div>
+
+        <div id="status-bar" style="font-size: 16px; margin-bottom: 2px;">SENTE: 0 vs GOTE: 0</div>
+        <div id="msg" style="font-size: 14px; min-height: 1.2em; margin: 2px 0;">駒を選んで出陣してください</div>
+
+        <div id="p2-hand" class="hand"></div>
+        <div class="grid" id="main-board"></div>
+        <div id="p1-hand" class="hand"></div>
+
+        <button onclick="location.reload()" id="re-btn" style="display:none; margin-top: 5px; padding: 8px 16px; font-size: 14px;">メニューに戻る</button>
+        <button onclick="showGameLogUI()" id="log-btn" style="display:none; margin-top: 5px; padding: 8px 16px; font-size: 14px; border-color:#00ffff; color:#00ffff;" class="menu-btn">棋譜を見る</button>
+    </div>
+
+    <script>
+        const SIZE = 9;
+        let board = Array(SIZE * SIZE).fill(null);
+        let gameMode = 'cpu';
+        let cpuLevel = 1;
+        let cpuSide = 'p2'; // Default CPU side
+        let currentPlayer = 'p1';
+        let selectedCardIdx = null;
+        let p1First = true, p2First = true;
+        let active = false;
+        let totalMoves = 0;
+        let kingLives = { p1: 3, p2: 3 };
+        let kingDamageMessage = '';
+        let lang = 'ja';
+        let isTeachingMode = false;
+        let teachingDifficulty = 'easy'; // 'easy' or 'hard'
+        let lastPlayerMove = null;
+        let teachingStats = { good: 0, bad: 0, captures: 0, total: 0 };
+        // Review & Log Data
+        let gameLog = []; // Stores each move: { turn, player, from, to, piece, score, reason }
+        let playerMoveStats = []; // Stores delta analysis: { turn, move, score, delta, isBest, isWorst }
+
+        // Online states
+        let peer = null;
+        let conn = null;
+        let isOnline = false;
+        let mySide = null; // 'p1' or 'p2'
+        let turnSyncData = { randoms: [], promotes: [] };
+        let receivedSyncData = null;
+
+        const BGM_SRC = 'audio/Whispers_of_the_Summit_Wind.mp3';
+        const MOVE_SFX_SRC = encodeURI('audio/shogi piece.mp3');
+        let bgm = null;
+        let moveSfx = null;
+        let audioEnabled = true;
+
+        function initAudio() {
+            if (bgm) return;
+            bgm = new Audio(BGM_SRC);
+            bgm.loop = true;
+            bgm.volume = 0.18;
+            bgm.preload = 'auto';
+
+            moveSfx = new Audio(MOVE_SFX_SRC);
+            moveSfx.volume = 0.55;
+            moveSfx.preload = 'auto';
+        }
+
+        function safePlayBgm() {
+            if (!audioEnabled || !bgm) return;
+            const p = bgm.play();
+            if (p && typeof p.catch === 'function') p.catch(() => { });
+        }
+
+        function playMoveSfx() {
+            if (!audioEnabled || !moveSfx) return;
+            const s = moveSfx.cloneNode(true);
+            s.volume = moveSfx.volume;
+            const p = s.play();
+            if (p && typeof p.catch === 'function') p.catch(() => { });
+        }
+
+        const leafCanvas = document.getElementById('leaf-canvas');
+        const leafCtx = leafCanvas.getContext('2d');
+        
+        // Configuración de animaciones basadas en los JSON
+        const LEAF_TYPES = [
+            { name: 'maple', count: 3, base: 'particles/textures/particle/maple_leaf_' },
+            { name: 'oak', count: 6, base: 'particles/textures/particle/oak_leaf_' },
+            { name: 'birch', count: 6, base: 'particles/textures/particle/birch_leaf_' }
+        ];
+
+        const leafImages = {};
+        LEAF_TYPES.forEach(type => {
+            leafImages[type.name] = [];
+            for (let i = 1; i <= type.count; i++) {
+                const img = new Image();
+                img.src = `${type.base}${i}.png`;
+                leafImages[type.name].push(img);
+            }
+        });
+
+        // Cargar texturas de salpicadura de agua para la promoción
+        const splashImages = [];
+        for (let i = 1; i <= 9; i++) {
+            const img = new Image();
+            img.src = `particles/textures/particle/water_splash_ring_${i}.png`;
+            splashImages.push(img);
+        }
+
+        const leafColors = [
+            '#ff5722', // Naranja rojizo vibrante
+            '#e64a19', // Naranja quemado
+            '#ffca28', // Ámbar dorado
+            '#f44336', // Rojo otoño
+            '#d84315', // Tierra roja
+            '#ffeb3b', // Amarillo hoja joven
+            '#8d6e63'  // Marrón hoja seca
+        ];
+
+        let leafW = 0;
+        let leafH = 0;
+        let leafDpr = 1;
+        const leaves = [];
+        const vfxEffects = []; // Sistema de efectos temporales
+        let leafLastTs = null;
+
+        function spawnPromotionSplash(cellIdx) {
+            const cellEl = document.getElementById('cell' + cellIdx);
+            if (!cellEl) return;
+            
+            const rect = cellEl.getBoundingClientRect();
+            // Calcular centro de la celda relativo al viewport
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            
+            vfxEffects.push({
+                type: 'splash',
+                x: centerX,
+                y: centerY,
+                frame: 0,
+                timer: 0,
+                speed: 0.05, // Un poco más rápido
+                size: rect.width * 2.5 // Más grande para que se note
+            });
+        }
+
+        function resizeLeafCanvas() {
+            leafDpr = window.devicePixelRatio || 1;
+            leafW = window.innerWidth;
+            leafH = window.innerHeight;
+            
+            leafCanvas.width = leafW * leafDpr;
+            leafCanvas.height = leafH * leafDpr;
+            leafCanvas.style.width = leafW + 'px';
+            leafCanvas.style.height = leafH + 'px';
+            
+            leafCtx.setTransform(leafDpr, 0, 0, leafDpr, 0, 0);
+            leafCtx.imageSmoothingEnabled = true;
+            leafCtx.imageSmoothingQuality = 'high';
+        }
+
+        function rand(min, max) {
+            return min + Math.random() * (max - min);
+        }
+
+        function pick(arr) {
+            return arr[Math.floor(Math.random() * arr.length)];
+        }
+
+        function spawnLeaf() {
+            const typeObj = pick(LEAF_TYPES);
+            // Tamaño reducido a resolución nativa para máxima nitidez (HD real)
+            const size = rand(12, 18); 
+            leaves.push({
+                x: rand(-50, leafW + 50),
+                y: rand(-leafH * 0.8, -30),
+                vx: rand(-20, 20), // Restaurado: Movimiento lateral original
+                vy: rand(20, 45),  // Restaurado: Velocidad de caída original
+                ax: rand(-4, 4),
+                rot: rand(0, Math.PI * 2),
+                rotV: rand(-1.2, 1.2), // Restaurado: Rotación original
+                sway: rand(0.3, 1.1),  // Restaurado: Balanceo original
+                swayPhase: rand(0, Math.PI * 2),
+                size,
+                alpha: rand(0.75, 0.98),
+                type: typeObj.name,
+                frame: 0,
+                frameTimer: 0,
+                // Solo la animación de frames es extremadamente lenta
+                frameSpeed: rand(2.5, 5.0), 
+                color: pick(leafColors)
+            });
+        }
+
+        function tickLeaves(dt) {
+            // Aumentamos la densidad para que no se vea vacío
+            const targetCount = Math.min(150, Math.max(60, Math.floor(leafW / 8)));
+            while (leaves.length < targetCount) spawnLeaf();
+
+            for (let i = leaves.length - 1; i >= 0; i--) {
+                const l = leaves[i];
+                l.frameTimer += dt;
+                if (l.frameTimer >= l.frameSpeed) {
+                    l.frameTimer = 0;
+                    const images = leafImages[l.type];
+                    l.frame = (l.frame + 1) % images.length;
+                }
+                l.swayPhase += dt * l.sway;
+                const swayX = Math.sin(l.swayPhase) * 35; // Amplitud de balanceo original
+                l.x += (l.vx + swayX * 0.18) * dt;
+                l.y += l.vy * dt;
+                l.vx += l.ax * dt;
+                l.rot += l.rotV * dt;
+                l.vx *= 0.985;
+                if (l.y > leafH + 80 || l.x < -200 || l.x > leafW + 200) {
+                    leaves.splice(i, 1);
+                }
+            }
+
+            // Actualizar vfxEffects (animación de promoción)
+            for (let i = vfxEffects.length - 1; i >= 0; i--) {
+                const v = vfxEffects[i];
+                v.timer += dt;
+                if (v.timer >= v.speed) {
+                    v.timer = 0;
+                    v.frame++;
+                    if (v.frame >= splashImages.length) {
+                        vfxEffects.splice(i, 1);
+                    }
+                }
+            }
+        }
+
+        function drawLeaves() {
+            leafCtx.clearRect(0, 0, leafW, leafH);
+            
+            // 1. Dibujar hojas primero (fondo)
+            leafCtx.imageSmoothingEnabled = false; 
+            for (const l of leaves) {
+                const images = leafImages[l.type];
+                const img = images[l.frame];
+                if (!img || !img.complete) continue;
+                
+                leafCtx.save();
+                leafCtx.translate(Math.floor(l.x), Math.floor(l.y));
+                leafCtx.rotate(l.rot);
+                const s = Math.floor(l.size);
+                leafCtx.globalAlpha = l.alpha;
+                leafCtx.globalCompositeOperation = 'source-over';
+                leafCtx.drawImage(img, -s / 2, -s / 2, s, s);
+                leafCtx.globalCompositeOperation = 'source-atop';
+                leafCtx.fillStyle = l.color;
+                leafCtx.globalAlpha = l.alpha * 0.55; 
+                leafCtx.fillRect(-s / 2, -s / 2, s, s);
+                leafCtx.restore();
+            }
+
+            // 2. Dibujar vfxEffects (Salpicadura de promoción) AL FINAL (encima de todo)
+            leafCtx.imageSmoothingEnabled = true; 
+            for (const v of vfxEffects) {
+                const img = splashImages[v.frame];
+                if (!img || !img.complete) continue;
+                
+                leafCtx.save();
+                leafCtx.translate(Math.floor(v.x), Math.floor(v.y));
+                // Usamos 'source-over' con brillo 'lighter' opcional si queremos que destaque
+                leafCtx.globalCompositeOperation = 'source-over';
+                leafCtx.globalAlpha = 1.0;
+                leafCtx.drawImage(img, -v.size / 2, -v.size / 2, v.size, v.size);
+                
+                // Efecto de brillo adicional
+                leafCtx.globalCompositeOperation = 'lighter';
+                leafCtx.globalAlpha = 0.3;
+                leafCtx.drawImage(img, -v.size / 2, -v.size / 2, v.size, v.size);
+                leafCtx.restore();
+            }
+        }
+
+        function animateLeaves(ts) {
+            if (leafLastTs === null) leafLastTs = ts;
+            const dt = Math.min(0.033, (ts - leafLastTs) / 1000);
+            leafLastTs = ts;
+            tickLeaves(dt);
+            drawLeaves();
+            requestAnimationFrame(animateLeaves);
+        }
+
+        function getSRand() {
+            if (isOnline) {
+                if (currentPlayer === mySide) {
+                    const r = Math.random();
+                    turnSyncData.randoms.push(r);
+                    return r;
+                } else if (receivedSyncData) {
+                    return receivedSyncData.randoms.shift();
+                }
+            }
+            return Math.random();
+        }
+
+        function getSConfirm(msg) {
+            if (isOnline) {
+                if (currentPlayer === mySide) {
+                    const res = confirm(msg);
+                    turnSyncData.promotes.push(res);
+                    return res;
+                } else if (receivedSyncData) {
+                    return receivedSyncData.promotes.shift();
+                }
+            }
+            return confirm(msg);
+        }
+
+        const PIECES = [
+            { n: "王", en: "King", es: "Rey", pt: "Rei", t: "K", img: "images/king.png", p: [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]], pr: false },
+            { n: "飛", en: "Rook", es: "Torre", pt: "Torre", pen: "Promoted Rook", pes: "Torre Promovida", ppt: "Torre Promovida", t: "R", img: "images/rook.png", p: [[1, 0], [-1, 0], [0, 1], [0, -1]], pr: true, pn: "龍", pimg: "images/rook_promoted.png", pp: [[1, 1], [1, -1], [-1, 1], [-1, -1]] },
+            { n: "角", en: "Bishop", es: "Alfil", pt: "Bispo", pen: "Promoted Bishop", pes: "Alfil Promovido", ppt: "Bispo Promovido", t: "B", img: "images/bishop.png", p: [[1, 1], [1, -1], [-1, 1], [-1, -1]], pr: true, pn: "馬", pimg: "images/bishop_promoted.png", pp: [[1, 0], [-1, 0], [0, 1], [0, -1]] },
+            { n: "金", en: "Gold", es: "Oro", pt: "Ouro", t: "G", img: "images/gold.png", p: [[-1, 0], [-1, 1], [-1, -1], [0, 1], [0, -1], [1, 0]], pr: false },
+            { n: "銀", en: "Silver", es: "Plata", pt: "Prata", pen: "Promoted Silver", pes: "Plata Promovida", ppt: "Prata Promovida", t: "S", img: "images/silver.png", p: [[-1, 0], [-1, 1], [-1, -1], [1, 1], [1, -1]], pr: true, pn: "全", pimg: "images/silver_promoted1.png" },
+            { n: "桂", en: "Knight", es: "Caballo", pt: "Cavalo", pen: "Promoted Knight", pes: "Caballo Promovido", ppt: "Cavalo Promovido", t: "N", img: "images/knight1.png", p: [[-2, 1], [-2, -1]], pr: true, pn: "圭", pimg: "images/knight_promoted.png" },
+            { n: "香", en: "Lance", es: "Lanza", pt: "Lança", pen: "Promoted Lance", pes: "Lanza Promovida", ppt: "Lança Promovida", t: "L", img: "images/lance.png", p: [[-1, 0]], pr: true, pn: "杏", pimg: "images/lance_promoted.png" },
+            { n: "歩", en: "Pawn", es: "Peón", pt: "Peão", pen: "Tokin", pes: "Tokin", ppt: "Tokin", t: "P", img: "images/pawn.png", p: [[-1, 0]], pr: true, pn: "と", pimg: "images/pawn_promoted.png" }
+        ];
+
+        const TEXTS = {
+            ja: {
+                title: "ティンク将棋", cpu_title: "一人で対局 (vs CPU)", lv1: "Lv.1(無鉄砲)", lv2: "Lv.2(王狙撃)", lv3: "Lv.3(標準)", lv4: "Lv.4(冷徹)", lv5: "Lv.5(至高)", pvp: "二人で対局 (2P)",
+                desc: "全八種類の駒を使い切り、盤上を制せ", initMsg: "駒を選んで出陣してください", thinking: "相手が考えています...",
+                turn: "{0}の番です", win: "{0}の勝利！", draw: "引き分け！", def: "防+", atk: "攻+",
+                noMove: "🚫 {0}は置く場所がありません！<br>{1}の勝利！", kingDead: "👑 {0}の王が討ち取られた！<br>{1}の勝利！",
+                kingSurvive: "{0}の王が攻撃を耐えた！残り命: {1}",
+                promoteConfirm: "成り条件を満たしました！「{0}」を成りますか?\n（成後: {1}）", back: "メニューに戻る",
+                rule: "📖 ルール",
+                lockedMsg: "5ターン目〜",
+                cpu_side: "あなたの陣営:", side_sente: "SENTE (先手・赤)", side_gote: "GOTE (後手・青)",
+                p1: "SENTE(赤)", p2: "GOTE(青)", p1Short: "SENTE", p2Short: "GOTE",
+                ol_btn: "オンラインで対局", ol_title: "オンライン対局", ol_wait: "自分のID（クリックでコピー）:",
+                ol_connect: "相手のIDを入力して接続:", ol_loading: "接続中...", ol_connected: "接続完了！",
+                ol_lost: "接続が切れました", ol_copy: "IDをコピーしました",
+                lv6: "Lv.6(超強)", lv7: "Lv.7(神)", lv8: "Lv.8(伝説)",
+                p_place: "敵地へ配置", p_capture: "敵駒を捕獲", p_flip: "領土を奪取",
+                turn_num: "ターン目",
+                teaching: "指導対局モード",
+                hint_l1: "ヒント Lv.1 (大局観)", hint_l2: "ヒント Lv.2 (エリア)", hint_l3: "ヒント Lv.3 (駒)", hint_l4: "ヒント Lv.4 (具体手)",
+                hint_l1_msg: "攻防の指針: {0}", hint_l2_msg: "注目エリア: {0}", hint_l3_msg: "{0}を使うと良さそうです。", hint_l4_msg: "正解手: {0}",
+                praise_msg: "いいですね！その手は{0}を狙っていますね。",
+                coach_intro: "よろしくお願いします。一緒に強くなりましょう！",
+                // 新しいメッセージリスト
+                msg_intro: ["さあ、あなたの番です。", "じっくり考えましょう。", "攻めますか？守りますか？", "盤面を広く見てみましょう。"],
+                msg_praise: ["素晴らしい一手！", "いいですね！{0}が光っています。", "その手は見えませんでした！お見事。", "鋭い！{0}をうまく使いましたね。"],
+                msg_normal: ["なるほど、そう来ましたか。", "堅実な進行です。", "着実な一手ですね。", "準備万端ですね。"],
+                msg_warning: ["おっと、少し隙ができたかも？", "大丈夫ですか？反撃に注意です。", "少し冒険しましたね。", "慎重に行きましょう。"],
+                msg_capture: ["ナイスキャッチ！", "敵の戦力を削ぎましたね。", "駒得です！これは大きい。"],
+                msg_check: ["王手！追い詰めましたね！", "いいプレッシャーです！"],
+                // フィードバック用
+                report_title: "【対局振り返り】",
+                report_good: ["攻撃の姿勢がとても良かったです。", "駒をうまく使えていますね。", "粘り強い守りでした。", "チャンスを逃しませんでしたね。"],
+                report_bad: ["少し無理な攻めがあったかもしれません。", "王の守りをもう少し固めましょう。", "相手の狙いを見落とさないように。", "駒損に注意しましょう。"],
+                report_advice: ["次は序盤をもっと丁寧に。", "終盤の寄せを練習しましょう。", "駒の利きを確認する癖をつけましょう。", "もっと自信を持って指してOKです！"],
+                // 思考可視化・レビュー用
+                thought_title: "CPUの思考:",
+                reason_attack: "攻撃重視", reason_def: "守備固め", reason_mat: "駒得", reason_promo: "成り狙い", reason_pos: "好位置",
+                reason_space: "スペース拡大", reason_king: "王を攻撃", reason_form: "陣形整備", reason_prep: "攻めの準備",
+                review_best: "★ 最善手:", review_worst: "⚠ 疑問手:",
+                log_saved: "対局ログをコンソールに出力しました。",
+                // 棋譜ログ用
+                view_log: "棋譜を見る", log_title: "対局記録", close: "閉じる",
+                // 指導難易度
+                teach_diff: "指導難易度:", diff_easy: "易しめ", diff_hard: "難しめ"
+            },
+            en: {
+                title: "TINKU SHOGI", cpu_title: "Single Player (vs CPU)", lv1: "Lv.1 (Reckless)", lv2: "Lv.2 (Sniper)", lv3: "Lv.3 (Standard)", lv4: "Lv.4 (Ruthless)", lv5: "Lv.5 (Supreme)", pvp: "Local Match (2P)",
+                desc: "Deploy all 8 types of pieces to conquer the board!", initMsg: "Select a piece to deploy", thinking: "Opponent is thinking...",
+                turn: "{0}'s turn", win: "{0} Wins!", draw: "Draw!", def: "DEF+", atk: "ATK+",
+                noMove: "🚫 {0} has no valid moves!<br>{1} Wins!", kingDead: "👑 {0}'s King was defeated!<br>{1} Wins!",
+                kingSurvive: "{0}'s King survived! Lives left: {1}",
+                promoteConfirm: "Promotion condition met! Promote '{0}'?\n(Promoted: {1})", back: "Back to Menu",
+                rule: "📖 Rules",
+                lockedMsg: "Turn 5+",
+                cpu_side: "Play as:", side_sente: "SENTE (Red)", side_gote: "GOTE (Blue)",
+                p1: "SENTE (Red)", p2: "GOTE (Blue)", p1Short: "SENTE (Red)", p2Short: "GOTE (Blue)",
+                ol_btn: "Online Match", ol_title: "Online Match", ol_wait: "Your ID (Click to copy):",
+                ol_connect: "Enter Partner's ID to connect:", ol_loading: "Connecting...", ol_connected: "Connected!",
+                ol_lost: "Connection lost", ol_copy: "ID copied!",
+                lv6: "Lv.6 (Expert)", lv7: "Lv.7 (God)", lv8: "Lv.8 (Legend)",
+                p_place: "Placed in enemy territory", p_capture: "Captured enemy piece", p_flip: "Flipped territory",
+                turn_num: "Turn",
+                teaching: "Teaching Mode",
+                hint_l1: "Hint Lv.1 (Strategy)", hint_l2: "Hint Lv.2 (Area)", hint_l3: "Hint Lv.3 (Piece)", hint_l4: "Hint Lv.4 (Move)",
+                hint_l1_msg: "Strategy: {0}", hint_l2_msg: "Focus Area: {0}", hint_l3_msg: "It might be a good idea to use your {0}.", hint_l4_msg: "Best Move: {0}",
+                praise_msg: "Nice move! You are aiming for {0}.",
+                coach_intro: "Let's learn and improve together!",
+                msg_intro: ["It's your turn.", "Take your time.", "Will you attack or defend?", "Look at the whole board."],
+                msg_praise: ["Brilliant move!", "Nice! {0} is shining.", "I didn't see that! Well done.", "Sharp! Good use of {0}."],
+                msg_normal: ["I see, interesting choice.", "Solid play.", "Steady move.", "You are well prepared."],
+                msg_warning: ["Oops, might be a bit risky?", "Are you sure? Watch out for counters.", "A bit adventurous.", "Let's be careful."],
+                msg_capture: ["Nice catch!", "You weakened the enemy.", "Material advantage!"],
+                msg_check: ["Check! Good pressure!", "You have them cornered!"],
+                report_title: "[Match Review]",
+                report_good: ["Great attacking spirit.", "Good use of your pieces.", "Tenacious defense.", "You seized the opportunity well."],
+                report_bad: ["Some attacks might have been rushed.", "Try to solidify your King's defense.", "Watch out for opponent's threats.", "Avoid losing material unnecessarily."],
+                report_advice: ["Be more careful in the opening.", "Practice your endgame.", "Always check piece range.", "Play with more confidence!"],
+                thought_title: "CPU Thoughts:",
+                reason_attack: "Strong Attack", reason_def: "Solid Defense", reason_mat: "Material Gain", reason_promo: "Promotion", reason_pos: "Good Position",
+                reason_space: "Expand Space", reason_king: "Attack King", reason_form: "Formation", reason_prep: "Preparation",
+                review_best: "★ Best Move:", review_worst: "⚠ Mistake:",
+                log_saved: "Game log saved to console.",
+                view_log: "View Log", log_title: "Game Record", close: "Close",
+                teach_diff: "Teaching Level:", diff_easy: "Easy", diff_hard: "Hard"
+            },
+            es: {
+                title: "TINKU SHOGI", cpu_title: "1 Jugador (vs CPU)", lv1: "Nvl.1 (Imprudente)", lv2: "Nvl.2 (Francotirador)", lv3: "Nvl.3 (Estándar)", lv4: "Nvl.4 (Implacable)", lv5: "Nvl.5 (Supremo)", pvp: "Duelo Local (2P)",
+                desc: "¡Usa los 8 tipos de piezas para conquistar el tablero!", initMsg: "Selecciona una pieza para desplegar", thinking: "El oponente está pensando...",
+                turn: "Turno de {0}", win: "¡{0} Gana!", draw: "¡Empate!", def: "DEF+", atk: "ATK+",
+                noMove: "🚫 ¡{0} no tiene movimientos!<br>¡{1} Gana!", kingDead: "👑 ¡El Rey de {0} fue derrotado!<br>¡{1} Gana!",
+                kingSurvive: "¡El Rey de {0} sobrevivió! Vidas: {1}",
+                promoteConfirm: "¡Promoción disponible! ¿Coronar '{0}'?\n(Coronada: {1})", back: "Volver al Menú",
+                rule: "📖 Reglas",
+                lockedMsg: "Turno 5+",
+                cpu_side: "Jugar como:", side_sente: "SENTE (Rojo)", side_gote: "GOTE (Azul)",
+                p1: "SENTE (Rojo)", p2: "GOTE (Azul)", p1Short: "SENTE (Rojo)", p2Short: "GOTE (Azul)",
+                ol_btn: "Partida Online", ol_title: "Partida Online", ol_wait: "Tu ID (Clic para copiar):",
+                ol_connect: "ID del oponente:", ol_loading: "Conectando...", ol_connected: "¡Conectado!",
+                ol_lost: "Conexión perdida", ol_copy: "ID copiada!",
+                lv6: "Nvl.6 (Experto)", lv7: "Nvl.7 (Dios)", lv8: "Nvl.8 (Leyenda)",
+                p_place: "Desplegado en zona enemiga", p_capture: "Pieza capturada", p_flip: "Territorio conquistado",
+                turn_num: "Turno",
+                teaching: "Modo Enseñanza",
+                hint_l1: "Pista Nvl.1 (Estrategia)", hint_l2: "Pista Nvl.2 (Área)", hint_l3: "Pista Nvl.3 (Pieza)", hint_l4: "Pista Nvl.4 (Movimiento)",
+                hint_l1_msg: "Estrategia: {0}", hint_l2_msg: "Área de enfoque: {0}", hint_l3_msg: "Sería una buena idea utilizar su {0}.", hint_l4_msg: "Mejor movimiento: {0}",
+                praise_msg: "¡Buena jugada! Estás apuntando a {0}.",
+                coach_intro: "¡Aprendamos y mejoremos juntos!",
+                msg_intro: ["Es su turno.", "Tómese su tiempo.", "¿Atacará o defenderá?", "Observe todo el tablero."],
+                msg_praise: ["¡Brillante jugada!", "¡Bien! {0} está brillando.", "¡No vi eso! Bien hecho.", "¡Agudo! Buen uso de {0}."],
+                msg_normal: ["Ya veo, interesante elección.", "Juego sólido.", "Movimiento firme.", "Está bien preparado."],
+                msg_warning: ["Ups, ¿quizás un poco arriesgado?", "¿Seguro? Cuidado con los contraataques.", "Un poco aventurero.", "Tengamos cuidado."],
+                msg_capture: ["¡Buena captura!", "Debilitó al enemigo.", "¡Ventaja material!"],
+                msg_check: ["¡Jaque! ¡Buena presión!", "¡Los tiene acorralados!"],
+                report_title: "[Resumen]",
+                report_good: ["Buen espíritu de ataque.", "Buen uso de las piezas.", "Defensa tenaz.", "Aprovechaste bien la oportunidad."],
+                report_bad: ["Algunos ataques fueron precipitados.", "Intenta reforzar la defensa del Rey.", "Cuidado con las amenazas rivales.", "Evita perder material."],
+                report_advice: ["Sé más cuidadoso en la apertura.", "Practica el final del juego.", "Revisa siempre el alcance.", "¡Juega con confianza!"],
+                thought_title: "Pensamientos de la CPU:",
+                reason_attack: "Ataque fuerte", reason_def: "Defensa sólida", reason_mat: "Ventaja material", reason_promo: "Promoción", reason_pos: "Buena posición",
+                reason_space: "Expandir espacio", reason_king: "Atacar Rey", reason_form: "Formación", reason_prep: "Preparación",
+                review_best: "★ Mejor jugada:", review_worst: "⚠ Error:",
+                log_saved: "Registro guardado en consola.",
+                view_log: "Ver Registro", log_title: "Registro del Juego", close: "Cerrar",
+                teach_diff: "Dificultad:", diff_easy: "Fácil", diff_hard: "Difícil"
+            },
+            pt: {
+                title: "TINKU SHOGI", cpu_title: "1 Jogador (vs CPU)", lv1: "Nív.1 (Imprudente)", lv2: "Nív.2 (Atirador)", lv3: "Nív.3 (Padrão)", lv4: "Nív.4 (Implacável)", lv5: "Nív.5 (Supremo)", pvp: "Duelo Local (2P)",
+                desc: "Use as 8 peças para conquistar o tabuleiro!", initMsg: "Selecione uma peça para jogar", thinking: "O oponente está pensando...",
+                turn: "Turno de {0}", win: "{0} Venceu!", draw: "Empate!", def: "DEF+", atk: "ATK+",
+                noMove: "🚫 {0} não tem mais movimentos!<br>{1} Venceu!", kingDead: "👑 O Rei de {0} foi derrotado!<br>{1} Venceu!",
+                kingSurvive: "O Rei de {0} sobreviveu! Vidas: {1}",
+                promoteConfirm: "Condição de promoção! Promover '{0}'?\n(Promovida: {1})", back: "Voltar ao Menu",
+                rule: "📖 Regras",
+                lockedMsg: "Turno 5+",
+                cpu_side: "Jogar como:", side_sente: "SENTE (Vermelho)", side_gote: "GOTE (Azul)",
+                p1: "SENTE (Vermelho)", p2: "GOTE (Azul)", p1Short: "SENTE (Vermelho)", p2Short: "GOTE (Azul)",
+                ol_btn: "Partida Online", ol_title: "Partida Online", ol_wait: "Seu ID (Clique para copiar):",
+                ol_connect: "ID do oponente:", ol_loading: "Conectando...", ol_connected: "Conectado!",
+                ol_lost: "Conexão perdida", ol_copy: "ID copiado!",
+                lv6: "Nív.6 (Mestre)", lv7: "Nív.7 (Deus)", lv8: "Nív.8 (Lenda)",
+                teaching: "Modo de Ensino",
+                hint_l1: "Dica Nív.1 (Estratégia)", hint_l2: "Dica Nív.2 (Área)", hint_l3: "Dica Nív.3 (Peça)", hint_l4: "Dica Nív.4 (Movimento)",
+                hint_l1_msg: "Estratégia: {0}", hint_l2_msg: "Área de foco: {0}", hint_l3_msg: "Seria uma boa ideia usar o seu {0}.", hint_l4_msg: "Melhor movimento: {0}",
+                praise_msg: "Boa jogada! Você está mirando em {0}.",
+                coach_intro: "Vamos aprender e melhorar juntos!",
+                msg_intro: ["É a sua vez.", "Tome seu tempo.", "Vai atacar ou defender?", "Olhe para todo o tabuleiro."],
+                msg_praise: ["Jogada brilhante!", "Boa! {0} está brilhando.", "Não vi essa! Muito bem.", "Afiado! Bom uso de {0}."],
+                msg_normal: ["Entendo, escolha interessante.", "Jogo sólido.", "Movimento firme.", "Você está bem preparado."],
+                msg_warning: ["Opa, talvez um pouco arriscado?", "Tem certeza? Cuidado com contra-ataques.", "Um pouco aventureiro.", "Vamos ter cuidado."],
+                msg_capture: ["Boa captura!", "Você enfraqueceu o inimigo.", "Vantagem material!"],
+                msg_check: ["Xeque! Boa pressão!", "Você os encurralou!"],
+                report_title: "[Análise]",
+                report_good: ["Ótimo espírito de ataque.", "Bom uso das peças.", "Defesa tenaz.", "Você aproveitou a chance."],
+                report_bad: ["Alguns ataques foram precipitados.", "Tente solidificar a defesa do Rei.", "Cuidado com ameaças.", "Evite perder material."],
+                report_advice: ["Seja mais cuidadoso na abertura.", "Pratique o final do jogo.", "Sempre verifique o alcance.", "Jogue com confiança!"],
+                thought_title: "Pensamentos da CPU:",
+                reason_attack: "Ataque forte", reason_def: "Defesa sólida", reason_mat: "Ganho material", reason_promo: "Promoção", reason_pos: "Boa posição",
+                reason_space: "Expandir espaço", reason_king: "Atacar Rei", reason_form: "Formação", reason_prep: "Preparação",
+                review_best: "★ Melhor lance:", review_worst: "⚠ Erro:",
+                log_saved: "Registro salvo no console.",
+                view_log: "Ver Registro", log_title: "Registro do Jogo", close: "Fechar",
+                teach_diff: "Dificuldade:", diff_easy: "Fácil", diff_hard: "Difícil"
+            }
+        };
+
+        let hands = { p1: [], p2: [] };
+
+        const boardElement = document.getElementById('main-board');
+        for (let i = 0; i < SIZE * SIZE; i++) {
+            const c = document.createElement('div');
+            c.className = 'cell';
+            c.id = 'cell' + i;
+            c.onclick = () => doMove(i);
+            boardElement.appendChild(c);
+        }
+
+        function openRule() {
+            // 現在の言語に応じたPDFファイルを開く
+            const ruleFiles = {
+                ja: 'rules/Tinku_Shogi_Strategic_Blueprint_jp.pdf',
+                en: 'rules/TINKU_SHOGI_STRATEGY_PLAYBOOK en.pdf',
+                es: 'rules/Tinku_Shogi_Tactical_Briefing es.pdf',
+                pt: 'rules/TINKU_SHOGI_Tactical_Mastery po.pdf'
+            };
+
+            const targetFile = ruleFiles[lang] || ruleFiles['en']; // デフォルトは英語
+            window.open(targetFile, '_blank');
+        }
+
+        function changeLang(newLang) {
+            lang = newLang;
+            const t = TEXTS[lang];
+            document.getElementById('ui-title').innerText = t.title;
+            document.getElementById('ui-cpu-title').innerText = t.cpu_title;
+            document.getElementById('ui-lv1').innerText = t.lv1;
+            if (document.getElementById('ui-lv2')) document.getElementById('ui-lv2').innerText = t.lv2;
+            if (document.getElementById('ui-lv3')) document.getElementById('ui-lv3').innerText = t.lv3;
+            if (document.getElementById('ui-lv4')) document.getElementById('ui-lv4').innerText = t.lv4;
+            document.getElementById('ui-lv5').innerText = t.lv5;
+            document.getElementById('ui-pvp').innerText = t.pvp;
+            document.getElementById('ui-desc').innerText = t.desc;
+            if (document.getElementById('ui-cpu-side')) document.getElementById('ui-cpu-side').innerText = t.cpu_side;
+            if (document.getElementById('ui-side-sente')) document.getElementById('ui-side-sente').innerText = t.side_sente;
+            if (document.getElementById('ui-side-gote')) document.getElementById('ui-side-gote').innerText = t.side_gote;
+            document.getElementById('ui-online').innerText = t.ol_btn;
+            document.getElementById('ui-ol-title').innerText = t.ol_title;
+            document.getElementById('ui-ol-wait').innerText = t.ol_wait;
+            document.getElementById('ui-ol-connect').innerText = t.ol_connect;
+            document.getElementById('ui-ol-loading').innerText = t.ol_loading;
+            document.getElementById('ui-ol-join-btn').innerText = t.ol_connect;
+            document.getElementById('ui-teaching-mode').innerText = t.teaching;
+            document.getElementById('coach-msg').innerText = t.coach_intro;
+
+            document.getElementById('re-btn').innerText = t.back;
+            document.getElementById('rule-btn').innerText = t.rule;
+            document.getElementById('msg').innerText = active ? t.turn.replace("{0}", t.p1Short) : t.initMsg;
+            if (active) {
+                renderHands();
+                updateUI();
+            }
+        }
+
+        function startGame(mode, level = 1, side = 'p1') {
+            gameMode = mode;
+            cpuLevel = level;
+            isOnline = (mode === 'online');
+            mySide = isOnline ? side : null;
+            cpuSide = (mode === 'cpu') ? document.getElementById('cpu-side-sel').value : 'p2';
+            isTeachingMode = document.getElementById('teaching-mode-toggle').checked && mode === 'cpu';
+            // Get difficulty
+            if (isTeachingMode) {
+                const radios = document.getElementsByName('teach-diff');
+                for (let r of radios) { if (r.checked) teachingDifficulty = r.value; }
+            }
+            active = true;
+            document.getElementById('menu').style.display = 'none';
+            document.getElementById('online-overlay').style.display = 'none';
+            
+            if (isTeachingMode) {
+                document.getElementById('teaching-ui').style.display = 'block';
+                // ターン開始時のメッセージをランダムに設定
+                updateCoachMessage('intro');
+            } else {
+                document.getElementById('teaching-ui').style.display = 'none';
+            }
+
+            initAudio();
+            safePlayBgm();
+
+            // ゲーム状態の完全リセット
+            totalMoves = 0;
+            currentPlayer = 'p1';
+            p1First = true;
+            p2First = true;
+            selectedCardIdx = null;
+            board = Array(SIZE * SIZE).fill(null);
+            kingLives = { p1: 3, p2: 3 };
+            teachingStats = { good: 0, bad: 0, captures: 0, total: 0 };
+            gameLog = [];
+            playerMoveStats = [];
+
+            hands.p1 = JSON.parse(JSON.stringify(PIECES)).map(d => ({ ...d, used: false }));
+            hands.p2 = JSON.parse(JSON.stringify(PIECES)).map(d => ({ ...d, used: false }));
+
+            // 盤面UIのクリアと再構築（座標対応）
+            const grid = document.getElementById('main-board');
+            grid.innerHTML = '';
+            
+            // 1. Top Coordinate Row (9-1) - Shogi Style (Right to Left)
+            for (let c = SIZE; c >= 1; c--) { // 9 to 1
+                grid.appendChild(createCoordCell(c, 'coord-h'));
+            }
+            grid.appendChild(createCoordCell('', 'coord-corner')); // Top-Right corner spacer
+
+            // 2. Main Board Rows with Right Coordinate
+            for (let r = 0; r < SIZE; r++) {
+                // Board cells
+                for (let c = 0; c < SIZE; c++) {
+                    const i = r * SIZE + c;
+                    const el = document.createElement('div');
+                    el.id = 'cell' + i;
+                    el.className = 'cell';
+                    el.onclick = () => doMove(i);
+                    grid.appendChild(el);
+                }
+                
+                // Right coordinate (一~九 or 1-9)
+                // Use Kanji for rows if Japanese, but 1-9 is requested
+                grid.appendChild(createCoordCell(r + 1, 'coord-v'));
+            }
+
+            document.getElementById('msg').innerText = TEXTS[lang].turn.replace("{0}", TEXTS[lang].p1Short);
+            renderHands();
+            updateUI(); // 盤面表示の初期化
+            updateHighlights();
+            
+            // 指導モード：プレイヤーの手番開始時にイントロメッセージ
+            if (isTeachingMode && gameMode === 'cpu' && currentPlayer !== cpuSide) {
+                updateCoachMessage('intro');
+            }
+
+            if (gameMode === 'cpu' && cpuSide === 'p1') {
+                let t = TEXTS[lang];
+                document.getElementById('msg').innerHTML = t.thinking;
+                if (isTeachingMode) showCpuThought(true); // Show "Thinking..." UI
+                setTimeout(cpuTurn, 600);
+            }
+        }
+
+        function showCpuThought(isThinking, moves = []) {
+            if (!isTeachingMode) return;
+            const ui = document.getElementById('cpu-thought-ui');
+            const title = document.getElementById('cpu-thought-title');
+            const content = document.getElementById('cpu-thought-content');
+            const t = TEXTS[lang];
+
+            if (isThinking) {
+                ui.style.display = 'block';
+                title.innerText = t.thought_title;
+                content.innerText = t.thinking;
+            } else if (moves.length > 0) {
+                ui.style.display = 'block';
+                title.innerText = t.thought_title;
+                content.innerHTML = moves.map(m => {
+                    const color = m.isChosen ? "#00ff00" : "#ffd700"; // Green for chosen, Gold for candidate
+                    const mark = m.isChosen ? "✔ " : "";
+                    return `
+                    <div style="margin-bottom:4px; ${m.isChosen ? 'font-weight:bold;' : 'opacity:0.8;'}">
+                        <span style="color:${color};">${mark}${m.move}</span>: ${m.reason}
+                    </div>
+                `}).join('');
+            } else {
+                ui.style.display = 'none';
+            }
+        }
+
+        function createCoordCell(text, className) {
+            const div = document.createElement('div');
+            div.className = 'coord-cell ' + className;
+            div.innerText = text;
+            return div;
+        }
+
+        function renderHands() {
+            ['p1', 'p2'].forEach(p => {
+                const container = document.getElementById(p + '-hand');
+                container.innerHTML = '';
+                const isCPUHand = (gameMode === 'cpu' && p === cpuSide);
+                const isOnlineOpponent = (isOnline && p !== mySide);
+
+                hands[p].forEach((b, i) => {
+                    const isLocked = (totalMoves < 4 && b.t !== 'K' && b.t !== 'G');
+                    const card = document.createElement('div');
+                    card.className = `card ${b.used ? 'used' : ''} ${isLocked ? 'locked' : ''} ${(currentPlayer === p && selectedCardIdx === i) ? 'selected' : ''}`;
+                    const label = isLocked ? TEXTS[lang].lockedMsg : (b.n === "銀" ? TEXTS[lang].atk + " 40% vs 金" : "");
+                    let pieceName = lang === 'ja' ? b.n : b[lang];
+                    card.innerHTML = (isCPUHand || isOnlineOpponent) ? `<b style="font-size: clamp(14px, 4vw, 24px);">？</b>` :
+                        `<img src="${b.img}" alt="${pieceName}">
+                         <div style="font-size: 13px; font-weight: bold; color: #000; margin-top: -5px;">${pieceName}</div>
+                         <span>${label}</span>`;
+                    card.onclick = () => {
+                        if (active && currentPlayer === p && !b.used && !isCPUHand && !isOnlineOpponent && !isLocked) selectBusho(i);
+                    };
+                    container.appendChild(card);
+                });
+            });
+        }
+
+        function selectBusho(idx) {
+            if (isOnline && currentPlayer !== mySide) return;
+            const piece = hands[currentPlayer][idx];
+            if (totalMoves < 4 && (piece.t !== 'K' && piece.t !== 'G')) return;
+            selectedCardIdx = idx;
+            renderHands();
+            updateHighlights();
+
+            // Teaching Mode: Show CPU's recommended moves for the selected piece
+            if (isTeachingMode && gameMode === 'cpu' && currentPlayer !== cpuSide) {
+                showPlayerSuggestions(idx);
+            }
+        }
+
+        function showPlayerSuggestions(pieceIdx) {
+            const player = currentPlayer;
+            const piece = hands[player][pieceIdx];
+            let moves = [];
+
+            // Calculate score for all valid moves with this piece
+            for (let tIdx = 0; tIdx < SIZE * SIZE; tIdx++) {
+                if (checkValid(tIdx, player, pieceIdx)) {
+                    let score = evaluateCPUMove(pieceIdx, tIdx, player);
+                    moves.push({ pIdx: pieceIdx, tIdx, score });
+                }
+            }
+
+            // Sort and pick top 2
+            moves.sort((a, b) => b.score - a.score);
+            let topMoves = moves.slice(0, 2).map(m => {
+                let pName = (lang === 'ja') ? piece.n : (piece[lang] || piece.n);
+                // Shogi coordinate style: Column (Right-to-Left 9-1), Row (Top-to-Bottom 1-9)
+                let col = SIZE - (m.tIdx % SIZE); 
+                let row = Math.floor(m.tIdx / SIZE) + 1;
+                let coord = `(${col}, ${row})`;
+                return {
+                    move: `${pName} -> ${coord}`,
+                    reason: generateMoveReason(m),
+                    isChosen: false
+                };
+            });
+
+            // Display using the same UI as CPU thought
+            const t = TEXTS[lang];
+            const ui = document.getElementById('cpu-thought-ui');
+            const title = document.getElementById('cpu-thought-title');
+            const content = document.getElementById('cpu-thought-content');
+            
+            ui.style.display = 'block';
+            title.innerText = "Suggested Moves (CPU):"; // Or localize this
+            content.innerHTML = topMoves.map(m => `
+                <div style="margin-bottom:4px; opacity:0.9;">
+                    <span style="color:#00ffff;">${m.move}</span>: ${m.reason}
+                </div>
+            `).join('');
+        }
+
+        function updateHighlights() {
+            for (let i = 0; i < SIZE * SIZE; i++) {
+                const el = document.getElementById('cell' + i);
+                el.classList.remove('valid');
+                if (selectedCardIdx !== null && checkValid(i, currentPlayer, selectedCardIdx)) {
+                    el.classList.add('valid');
+                }
+            }
+        }
+
+        function checkValid(i, player, pIdx = null) {
+            const r = Math.floor(i / SIZE);
+            const idx = (pIdx !== null) ? pIdx : selectedCardIdx;
+            if (idx === null) return false;
+            const piece = hands[player][idx];
+
+            if (totalMoves < 4) {
+                if (piece.t !== 'K' && piece.t !== 'G') return false;
+                if (player === 'p1') {
+                    return (r >= 6 && r <= 8); // Sente: Rank 1-3 (Rows 7, 8, 9 -> index 6, 7, 8)
+                } else {
+                    return (r >= 0 && r <= 2); // Gote: Rank 1-3 (Rows 1, 2, 3 -> index 0, 1, 2)
+                }
+            }
+
+            // 王・金は常に自陣の3段目までしか打てない (5手目以降も永続ルール)
+            if (piece.t === 'K' || piece.t === 'G') {
+                if (player === 'p1') {
+                    if (r < 6) return false;
+                } else {
+                    if (r > 2) return false;
+                }
+            }
+
+            // 5手目以降：自分が占領しているマスで、かつ駒が置かれていない（isOriginでない）マスのみ配置可能
+            if (!board[i] || board[i].owner !== player) return false;
+            // 自分の駒があるマスには置けない（パスのような挙動を防ぐ）
+            if (board[i].isOrigin) return false;
+            return true;
+        }
+
+        function isUnderInfluenceOfPawn(idx, player) {
+            const side = (player === 'p1') ? 1 : -1;
+            for (let i = 0; i < SIZE * SIZE; i++) {
+                if (board[i] && board[i].owner === player && board[i].isOrigin && board[i].n === "歩") {
+                    const br = Math.floor(i / SIZE), bc = i % SIZE;
+                    const r = Math.floor(idx / SIZE), c = idx % SIZE;
+
+                    let patterns = [[-1, 0]]; // Default Pawn
+                    if (board[i].isPromoted) {
+                        patterns = [[-1, 0], [-1, 1], [-1, -1], [0, 1], [0, -1], [1, 0]]; // Tokin
+                    }
+
+                    for (let p of patterns) {
+                        const pr = p[0] * side, pc = p[1] * side;
+                        if (br + pr === r && bc + pc === c) return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function isUnderInfluence(idx, player) {
+            const r = Math.floor(idx / SIZE), c = idx % SIZE;
+            const side = (player === 'p1') ? 1 : -1;
+            for (let i = 0; i < SIZE * SIZE; i++) {
+                if (board[i] && board[i].owner === player) {
+                    const b = board[i];
+                    const br = Math.floor(i / SIZE), bc = i % SIZE;
+                    let patterns = [...b.p];
+                    if (b.isPromoted) {
+                        if (b.pp) patterns = [...patterns, ...b.pp];
+                        else patterns = [[-1, 0], [-1, 1], [-1, -1], [0, 1], [0, -1], [1, 0]];
+                    }
+                    for (let p of patterns) {
+                        const pr = p[0] * side, pc = p[1] * side;
+                        let tr = br + pr, tc = bc + pc;
+
+                        let isSlide = false;
+                        if (!b.isPromoted) {
+                            if (b.t === "R" || b.t === "B") isSlide = true;
+                        } else if (b.isPromoted && b.pp) {
+                            if (b.p.some(bp => bp[0] === p[0] && bp[1] === p[1])) isSlide = true;
+                        }
+
+                        let maxSteps = 1;
+                        if (isSlide) maxSteps = Infinity;
+                        else if (b.t === "L" && !b.isPromoted) {
+                            // End Phase: Lance range becomes infinite (Shogi-style)
+                            maxSteps = (totalMoves >= 12) ? Infinity : 2;
+                        }
+
+                        let steps = 0;
+                        while (tr >= 0 && tr < SIZE && tc >= 0 && tc < SIZE && steps < maxSteps) {
+                            if (tr === r && tc === c) return true;
+                            if (board[tr * SIZE + tc] && board[tr * SIZE + tc].isOrigin) break;
+                            tr += pr; tc += pc;
+                            steps++;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        // 指定プレイヤーが置けるマスを持つかチェック
+        function hasValidMove(player) {
+            const availIdxs = hands[player].map((b, i) => b.used ? -1 : i).filter(i => i !== -1);
+            if (availIdxs.length === 0) return false;
+
+            for (let pIdx of availIdxs) {
+                // Turn restriction check
+                if (totalMoves < 4 && (hands[player][pIdx].t === 'R' || hands[player][pIdx].t === 'B')) continue;
+
+                for (let i = 0; i < SIZE * SIZE; i++) {
+                    if (checkValid(i, player, pIdx)) return true;
+                }
+            }
+            return false;
+        }
+
+        function declareNoMove(loserLabel, winnerLabel) {
+            let tKey = TEXTS[lang].noMove;
+            tKey = tKey.replace("{0}", loserLabel).replace("{1}", winnerLabel);
+            document.getElementById('msg').innerHTML = `<b style="font-size:18px;">${tKey}</b>`;
+            active = false;
+            document.getElementById('re-btn').style.display = "inline-block";
+            document.getElementById('log-btn').style.display = "inline-block";
+            
+            // 指導モード：レポート表示
+            if (isTeachingMode && gameMode === 'cpu') {
+                showCoachReport();
+            }
+
+            if (isOnline && conn) conn.send({ type: 'restart' });
+        }
+
+        function declareKingDead(loser) {
+            const t = TEXTS[lang];
+            const winner = loser === 'p1' ? t.p2 : t.p1;
+            const loserName = loser === 'p1' ? t.p1 : t.p2;
+            let tKey = t.kingDead.replace("{0}", loserName).replace("{1}", winner);
+            document.getElementById('msg').innerHTML = `<b style="font-size:18px;">${tKey}</b>`;
+            active = false;
+            document.getElementById('re-btn').style.display = "inline-block";
+            document.getElementById('log-btn').style.display = "inline-block";
+
+            // 指導モード：レポート表示
+            if (isTeachingMode && gameMode === 'cpu') {
+                showCoachReport();
+            }
+
+            if (isOnline && conn) conn.send({ type: 'restart' });
+        }
+
+        function doMove(i, remoteData = null) {
+            if (!active) return;
+            if (isOnline && currentPlayer !== mySide && remoteData === null) return;
+            if (remoteData === null && (selectedCardIdx === null || !checkValid(i, currentPlayer))) return;
+
+            // Territory count for Rook's special ability
+            let territoryCount = 0;
+            board.forEach(cell => { if (cell && cell.owner === currentPlayer) territoryCount++; });
+
+            // Reset sync data for this turn
+            turnSyncData = { randoms: [], promotes: [] };
+            receivedSyncData = remoteData ? remoteData.sync : null;
+
+            const idx = (remoteData !== null) ? remoteData.idx : selectedCardIdx;
+            const piece = hands[currentPlayer][idx];
+            piece.used = true;
+
+            initAudio();
+            playMoveSfx();
+
+            let context = { promoted: false, powerUpD: false, powerUpA: false, declined: false, territory: territoryCount };
+
+            const r = Math.floor(i / SIZE);
+            const c = i % SIZE;
+            // 先手(p1)は下から上(-1方向)に進むため、歩は自分より下(r+1)にある。後手(p2)はその逆(r-1)。
+            if (isUnderInfluenceOfPawn(i, currentPlayer)) {
+                context.powerUpA = true;
+            }
+
+            // Online Sync: Send full turn state if it's a local player's move
+            if (isOnline && remoteData === null && conn) {
+                conn.send({ type: 'move', i: i, idx: idx, sync: turnSyncData });
+            }
+
+            // --- Teaching Mode Praise Logic & Logging ---
+            
+            // Log Player Move (Always log for game record)
+            // Calculate best possible score for comparison if teaching mode
+            let bestScore = -Infinity;
+            let isBest = false;
+            
+            if (isTeachingMode && gameMode === 'cpu' && currentPlayer !== cpuSide) {
+                let availIdxs = hands[currentPlayer].map((b, idx) => b.used ? -1 : idx).filter(id => id !== -1);
+                for (let pIdx of availIdxs) {
+                    for (let tIdx = 0; tIdx < SIZE * SIZE; tIdx++) {
+                        if (!checkValid(tIdx, currentPlayer, pIdx)) continue;
+                        let s = evaluateCPUMove(pIdx, tIdx, currentPlayer);
+                        if (s > bestScore) bestScore = s;
+                    }
+                }
+                // Evaluate current move score
+                // We need to evaluate *before* deploying to get accurate score context?
+                // Actually evaluateCPUMove evaluates based on current board + proposed move.
+                // So it's fine.
+            }
+            
+            let currentMoveScore = 0;
+            if (isTeachingMode && gameMode === 'cpu' && currentPlayer !== cpuSide) {
+                currentMoveScore = evaluateCPUMove(idx, i, currentPlayer);
+                isBest = (currentMoveScore >= bestScore - 0.5);
+            }
+
+            let logEntry = {
+                turn: totalMoves + 1,
+                player: currentPlayer,
+                piece: (lang === 'ja') ? piece.n : (piece[lang] || piece.n),
+                from: -1,
+                to: i,
+                score: currentMoveScore,
+                bestScore: bestScore,
+                delta: currentMoveScore - bestScore,
+                isBest: isBest,
+                isWorst: (isTeachingMode && currentMoveScore < bestScore - 15)
+            };
+            gameLog.push(logEntry);
+            if (isTeachingMode && gameMode === 'cpu' && currentPlayer !== cpuSide) {
+                playerMoveStats.push(logEntry);
+            }
+
+            if (isTeachingMode && gameMode === 'cpu' && currentPlayer !== cpuSide) {
+                // Evaluate the move (using already calculated score)
+                let score = currentMoveScore;
+                
+                let praiseType = null; // Default: No message
+                let praiseParam = '';
+
+                // 評価基準を厳格化
+                // Score > 20: 非常に良い手 (以前は12)
+                // Score < -10: 致命的な悪手 (以前は-5)
+                // 駒取りや陣地獲得は確率で表示 (毎回だと多い)
+
+                // Check for High Score Move (Excellent)
+                if (score > 20) {
+                    praiseType = 'praise';
+                    // Use piece name if available
+                    praiseParam = (lang === 'ja') ? piece.n : (piece[lang] || piece.n);
+                    teachingStats.good++;
+                }
+                // Check for Bad Move (Mistake)
+                else if (score < -10) {
+                    praiseType = 'warning';
+                    teachingStats.bad++;
+                }
+                // Significant Events (Capture / Territory) - 30% chance to comment
+                else if (Math.random() < 0.3) {
+                     if (board[i] && board[i].isOrigin) {
+                        praiseType = 'capture';
+                    } else if (board[i] && board[i].owner !== currentPlayer) {
+                        praiseType = 'praise';
+                        praiseParam = (lang === 'ja') ? "エリア" : "Territory";
+                    }
+                }
+
+                if (praiseType) {
+                    updateCoachMessage(praiseType, praiseParam);
+                }
+            }
+
+            deploy(i, currentPlayer, piece, context);
+            
+            if (isTeachingMode && context.captured) {
+                teachingStats.captures++;
+            }
+            if (isTeachingMode && currentPlayer !== cpuSide) {
+                teachingStats.total++;
+            }
+
+            if (currentPlayer === 'p1') p1First = false; else p2First = false;
+            totalMoves++;
+
+            currentPlayer = (currentPlayer === 'p1') ? 'p2' : 'p1';
+            selectedCardIdx = null;
+
+            renderHands();
+            updateUI();
+            updateHighlights();
+
+            const t = TEXTS[lang];
+            if (totalMoves >= 16) {
+                setTimeout(finish, 500);
+            } else if (!hasValidMove(currentPlayer)) {
+                const loser = currentPlayer === 'p1' ? t.p1 : t.p2;
+                const winner = currentPlayer === 'p1' ? t.p2 : t.p1;
+                setTimeout(() => declareNoMove(loser, winner), 300);
+            } else if (gameMode === 'cpu' && currentPlayer === cpuSide) {
+                let text = t.thinking;
+                if (kingDamageMessage) text = `${kingDamageMessage}<br><span style="font-size:12px;color:#ccc;">${text}</span>`;
+                document.getElementById('msg').innerHTML = text;
+                setTimeout(cpuTurn, 600);
+            } else {
+                let name = currentPlayer === 'p1' ? t.p1Short : t.p2Short;
+                let text = t.turn.replace("{0}", name);
+                if (kingDamageMessage) text = `${kingDamageMessage}<br><span style="font-size:12px;color:#ccc;">${text}</span>`;
+                document.getElementById('msg').innerHTML = text;
+
+                // 指導モード：プレイヤーの手番開始時にイントロメッセージ (少し遅らせる)
+                if (isTeachingMode && gameMode === 'cpu' && currentPlayer !== cpuSide) {
+                    setTimeout(() => updateCoachMessage('intro'), 1000);
+                }
+            }
+            kingDamageMessage = '';
+        }
+
+        // 駒価値テーブル
+        const PIECE_VALUES = { "K": 10.0, "R": 5.2, "B": 4.7, "G": 3.8, "S": 3.2, "L": 4.9, "N": 5.2, "P": 2.0 };
+
+        /**
+         * 共通評価関数: 候補手のScoreを計算する
+         * @param {number} pieceIdx - 使う駒のインデックス
+         * @param {number} targetIdx - 配置するマスのインデックス
+         * @param {string} evalSide - 評価する陣営
+         * @param {boolean} skipCounter - 反撃値計算をスキップするか (無限ループ防止)
+         */
+        function evaluateCPUMove(pieceIdx, targetIdx, evalSide = null, skipCounter = false) {
+            const level = evalSide === cpuSide ? cpuLevel : 3;
+            const side = evalSide || cpuSide;
+            const opp = side === 'p1' ? 'p2' : 'p1';
+            const piece = hands[side][pieceIdx];
+            const r = Math.floor(targetIdx / SIZE);
+            const pieceCol = targetIdx % SIZE;
+            const rForward = (side === 'p1') ? 1 : -1;
+            let dmg = (piece.t === "N" && totalMoves >= 12) ? 2 : 1;
+
+            // STEP 1: Lethal Check (+9999)
+            let lethalScore = 0;
+            let lethalProb = 0;
+            const checkLethal = (pList, isPromoted) => {
+                pList.forEach(p => {
+                    const pr = p[0] * rForward, pc = p[1] * rForward;
+                    let nr = r + pr, nc = pieceCol + pc;
+                    let isSlide = (isPromoted ? (piece.pp && piece.p.some(bp => bp[0] === p[0] && bp[1] === p[1])) : (piece.t === "R" || piece.t === "B"));
+                    let maxSteps = isSlide ? Infinity : ((piece.t === "L" && !piece.pr) ? (totalMoves >= 12 ? Infinity : 2) : 1);
+                    let steps = 0;
+                    while (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && steps < maxSteps) {
+                        const ti = nr * SIZE + nc, targetPiece = board[ti];
+                        if (targetPiece && targetPiece.isOrigin && targetPiece.owner === opp && targetPiece.t === "K") {
+                            if (kingLives[opp] - dmg <= 0) {
+                                lethalScore = 9999;
+                                lethalProb = getIndivSuccessRate(ti, side, piece, targetIdx);
+                            }
+                        }
+                        if (targetPiece && targetPiece.isOrigin) break;
+                        nr += pr; nc += pc; steps++;
+                    }
+                });
+            };
+            checkLethal(piece.p, false);
+            if (lethalScore > 0) return lethalScore + lethalProb;
+
+            // STEP 2: Standard Score Calculation
+            let totalExpectedDamage = 0, newlyGainedTerritory = 0;
+            const checkInfluence = (pList, isPromoted) => {
+                pList.forEach(p => {
+                    const pr = p[0] * rForward, pc = p[1] * rForward;
+                    let nr = r + pr, nc = pieceCol + pc;
+                    let isSlide = (isPromoted ? (piece.pp && piece.p.some(bp => bp[0] === p[0] && bp[1] === p[1])) : (piece.t === "R" || piece.t === "B"));
+                    let maxSteps = isSlide ? Infinity : ((piece.t === "L" && !piece.pr) ? (totalMoves >= 12 ? Infinity : 2) : 1);
+                    let steps = 0;
+                    while (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && steps < maxSteps) {
+                        const ti = nr * SIZE + nc, targetPiece = board[ti];
+                        if (!targetPiece || targetPiece.owner !== side) {
+                            newlyGainedTerritory++;
+                            if (targetPiece && targetPiece.isOrigin) {
+                                let sr = getIndivSuccessRate(ti, side, piece, targetIdx);
+                                totalExpectedDamage += (sr * (targetPiece.t === "K" ? dmg : 1));
+                                break;
+                            }
+                        }
+                        if (targetPiece && targetPiece.isOrigin) break;
+                        nr += pr; nc += pc; steps++;
+                    }
+                });
+            };
+            checkInfluence(piece.p, false);
+            if (piece.pr && ((side === 'p1' && r <= 2) || (side === 'p2' && r >= SIZE - 3))) checkInfluence(piece.pp || [[-1, 0], [-1, 1], [-1, -1], [0, 1], [0, -1], [1, 0]], true);
+
+            let A = 2, B = 3, C = 3, D = 0.5;
+            if (level === 1) { A = 10; B = 0; C = 1; D = 0; }
+            else if (level === 2) { A = 15; B = 0.2; C = 1; D = 0.1; }
+            else if (level === 3) { A = 2; B = 3; C = 3; D = 0.5; }
+            else if (level === 4) { A = 8; B = 1; C = 2; D = 0.8; }
+            else if (level === 5) { A = 3; B = 5; C = 5; D = 1.2; }
+
+            let score = (totalExpectedDamage * A) + (newlyGainedTerritory * B) + (isUnderInfluenceOfPawn(targetIdx, side) ? C : 0);
+
+            if (!skipCounter && D > 0) {
+                let maxOppScore = 0, samplePieceIdx = hands[opp].findIndex(h => !h.used && (totalMoves >= 4 || h.t === "K" || h.t === "G"));
+                if (samplePieceIdx !== -1) {
+                    for (let ti = 0; ti < SIZE * SIZE; ti += 13) {
+                        if (checkValid(ti, opp, samplePieceIdx)) {
+                            let s = evaluateCPUMove(samplePieceIdx, ti, opp, true);
+                            if (s > maxOppScore) maxOppScore = s;
+                        }
+                    }
+                }
+                score -= (maxOppScore * D);
+            }
+
+            // STEP 3: Resource Management
+            const pVal = PIECE_VALUES[piece.t] || 0;
+            score += (totalMoves < 12) ? -(pVal * 0.25) : (pVal * 0.20);
+            if (level === 1 && totalExpectedDamage >= 0.3) score += 50;
+            return score;
+        }
+
+        function getIndivSuccessRate(targetI, side, piece, originIdx) {
+            let sr = 0.6; const targetPiece = board[targetI];
+            if (!targetPiece || !targetPiece.isOrigin) return sr;
+            const level = (side === cpuSide) ? cpuLevel : 3;
+            if (level !== 2 && targetPiece.n === "金") sr -= 0.4;
+            if (piece.n === "銀" && targetPiece.n === "金") sr += 0.4;
+            if (isUnderInfluenceOfPawn(targetI, side)) sr += 0.2;
+            if ((piece.t === "R" || piece.t === "B") && totalMoves < 12) {
+                let dR = Math.abs(Math.floor(targetI / SIZE) - Math.floor(originIdx / SIZE)), dC = Math.abs((targetI % SIZE) - (originIdx % SIZE));
+                if (Math.max(dR, dC) >= 3) sr -= 0.3;
+            }
+            if (targetPiece.powerUpD) sr -= 0.2;
+            return Math.max(0, sr);
+        }
+
+        function generateMoveReason(move) {
+            const t = TEXTS[lang];
+            const score = move.score;
+            // Determine reason based on score components or simple heuristics
+            // Ideally we'd pass detailed score components, but for now we infer
+            if (score > 9000) return "Lethal (Victory)";
+
+            // Check destination
+            const r = Math.floor(move.tIdx / SIZE);
+            const c = move.tIdx % SIZE;
+            const isPromoZone = (cpuSide === 'p1') ? (r <= 2) : (r >= 6);
+            const piece = hands[cpuSide][move.pIdx];
+            const target = board[move.tIdx];
+
+            // 1. King Attack: Proximity to enemy King
+            // Find enemy King
+            const opp = cpuSide === 'p1' ? 'p2' : 'p1';
+            let kingIdx = -1;
+            for(let i=0; i<SIZE*SIZE; i++) {
+                if(board[i] && board[i].isOrigin && board[i].t === 'K' && board[i].owner === opp) {
+                    kingIdx = i; break;
+                }
+            }
+            if (kingIdx !== -1) {
+                const kr = Math.floor(kingIdx / SIZE), kc = kingIdx % SIZE;
+                const tr = Math.floor(move.tIdx / SIZE), tc = move.tIdx % SIZE;
+                // Check if move checks the king or moves very close
+                if (Math.abs(kr - tr) <= 1 && Math.abs(kc - tc) <= 1) return t.reason_king;
+            }
+
+            // 2. Material Gain (Check if capturing valuable piece)
+            if (target && target.isOrigin) {
+                if (target.t === 'K') return "Lethal";
+                if (target.t === 'R' || target.t === 'B' || target.t === 'G') return t.reason_mat;
+                if (score > 8) return t.reason_mat;
+            }
+
+            // 3. Promotion
+            // If piece can promote and moves into zone
+            if (isPromoZone && (piece.t === 'P' || piece.t === 'L' || piece.t === 'N' || piece.t === 'S' || piece.t === 'R' || piece.t === 'B')) {
+                 return t.reason_promo;
+            }
+
+            if (score > 15) return t.reason_attack; // Strong Attack
+            
+            // 4. Space Expansion: Taking empty territory near center or enemy camp
+            if (!target && r >= 3 && r <= 5) return t.reason_space;
+
+            // 5. Preparation / Formation: Moving defensive pieces or setting up
+            if (piece.t === 'G' || piece.t === 'S') return t.reason_form;
+            if (score > 3) return t.reason_prep;
+
+            if (score < 0) return t.reason_def; // Defensive move
+            return t.reason_pos; // Positional
+        }
+
+        function cpuTurn() {
+            const t = TEXTS[lang]; let availIdxs = [];
+            hands[cpuSide].forEach((b, i) => { if (!b.used && (totalMoves >= 4 || b.t === 'K' || b.t === 'G')) availIdxs.push(i); });
+            if (availIdxs.length === 0) return;
+            let bestMoves = [], maxScore = -Infinity;
+            
+            // Teaching Mode: Collect ALL moves
+            let allMoves = [];
+
+            for (let pIdx of availIdxs) {
+                for (let tIdx = 0; tIdx < SIZE * SIZE; tIdx++) {
+                    if (!checkValid(tIdx, cpuSide, pIdx)) continue;
+                    let score = evaluateCPUMove(pIdx, tIdx);
+                    
+                    if (isTeachingMode) {
+                        allMoves.push({ pIdx, tIdx, score });
+                    }
+
+                    if (score > maxScore) { maxScore = score; bestMoves = [{ pIdx, tIdx }]; }
+                    else if (Math.abs(score - maxScore) < 0.001) bestMoves.push({ pIdx, tIdx });
+                }
+            }
+            if (bestMoves.length === 0 && (!isTeachingMode || allMoves.length === 0)) { declareNoMove(t[cpuSide], cpuSide === 'p1' ? t.p2 : t.p1); return; }
+
+            let chosen;
+            if (isTeachingMode && allMoves.length > 0) {
+                // Sort by score descending
+                allMoves.sort((a, b) => b.score - a.score);
+                
+                // Show Top 2 Candidates
+                let topMoves = allMoves.slice(0, 2).map(m => {
+                    let piece = hands[cpuSide][m.pIdx];
+                    let pName = (lang === 'ja') ? piece.n : (piece[lang] || piece.n);
+                    let col = SIZE - (m.tIdx % SIZE); 
+                    let row = Math.floor(m.tIdx / SIZE) + 1;
+                    let coord = `(${col}, ${row})`;
+                    return {
+                        move: `${pName} -> ${coord}`,
+                        reason: generateMoveReason(m),
+                        score: m.score, // Keep score for comparison
+                        tIdx: m.tIdx,
+                        pIdx: m.pIdx
+                    };
+                });
+
+                // --- Teaching Logic Improvement ---
+                // Always try to pick sub-optimal move unless there are very few choices
+                // Strategy: Avoid the #1 best move (unless it's the only one).
+                // Pick from top 2 to top 5.
+                let candidateIndex = 0;
+                
+                if (allMoves.length > 1) {
+                    // Difficulty Logic
+                    if (teachingDifficulty === 'easy') {
+                        // Easy: Pick from index 2 to min(6, length-1) (Skip best 2 moves if possible)
+                        // Or allow picking bad moves (negative score) if not fatal
+                        // Let's pick from range [2, 6]
+                        let maxIdx = Math.min(allMoves.length - 1, 6);
+                        let minIdx = Math.min(allMoves.length - 1, 2);
+                        candidateIndex = Math.floor(Math.random() * (maxIdx - minIdx + 1)) + minIdx;
+                        
+                        // 20% chance to pick a really bad move if available (but not immediate lose)
+                        if (Math.random() < 0.2 && allMoves.length > 5) {
+                             candidateIndex = Math.floor(Math.random() * (allMoves.length - 5)) + 5;
+                        }
+                    } else {
+                        // Hard: Original logic (Gentle but not weak)
+                        // 80% chance to skip the absolute best move
+                        if (Math.random() < 0.8) {
+                            let maxIdx = Math.min(allMoves.length - 1, 4);
+                            candidateIndex = Math.floor(Math.random() * maxIdx) + 1; 
+                        }
+                    }
+                    
+                    // Ensure index is valid
+                    if (candidateIndex >= allMoves.length) candidateIndex = allMoves.length - 1;
+                }
+                
+                chosen = allMoves[candidateIndex];
+                
+                // Add the actual chosen move to the thought display if it's not already in top 2
+                // Or mark which one was chosen
+                let chosenPiece = hands[cpuSide][chosen.pIdx];
+                let chosenPName = (lang === 'ja') ? chosenPiece.n : (chosenPiece[lang] || chosenPiece.n);
+                let cCol = SIZE - (chosen.tIdx % SIZE); 
+                let cRow = Math.floor(chosen.tIdx / SIZE) + 1;
+                let chosenCoord = `(${cCol}, ${cRow})`;
+                let chosenMoveObj = {
+                    move: `${chosenPName} -> ${chosenCoord}`,
+                    reason: generateMoveReason(chosen),
+                    isChosen: true
+                };
+
+                // Check if chosen move is in topMoves
+                let foundInTop = false;
+                topMoves.forEach(tm => {
+                    if (tm.tIdx === chosen.tIdx && tm.pIdx === chosen.pIdx) {
+                        tm.isChosen = true;
+                        foundInTop = true;
+                    }
+                });
+
+                // If chosen move is not in top 2 (because we picked a suboptimal one), replace the 2nd one or add it
+                if (!foundInTop) {
+                    if (topMoves.length >= 2) topMoves[1] = chosenMoveObj;
+                    else topMoves.push(chosenMoveObj);
+                }
+
+                showCpuThought(false, topMoves);
+
+                // Update maxScore for logging/consistency
+                maxScore = chosen.score;
+            } else {
+                chosen = bestMoves[Math.floor(Math.random() * bestMoves.length)];
+            }
+            
+            let piece = hands[cpuSide][chosen.pIdx];
+
+            console.log(JSON.stringify({ Selected_Move: { piece: piece.n, x: chosen.tIdx % SIZE, y: Math.floor(chosen.tIdx / SIZE) }, Calculated_Score: maxScore, Mode: isTeachingMode ? "Teaching" : "Strict" }, null, 2));
+            
+            // Log CPU Move
+            gameLog.push({
+                turn: totalMoves + 1,
+                player: cpuSide,
+                piece: (lang === 'ja') ? piece.n : (piece[lang] || piece.n),
+                from: -1, // Drop from hand
+                to: chosen.tIdx,
+                score: maxScore,
+                isBest: (isTeachingMode && allMoves[0].score === maxScore)
+            });
+
+            selectedCardIdx = chosen.pIdx;
+            let originalConfirm = window.confirm;
+            if (cpuLevel >= 3) window.confirm = () => true;
+            else if (cpuLevel === 2) window.confirm = () => Math.random() > 0.3;
+            else window.confirm = () => Math.random() > 0.5;
+            doMove(chosen.tIdx); window.confirm = originalConfirm;
+        }
+
+        function deploy(idx, player, piece, context) {
+            const r = Math.floor(idx / SIZE), c = idx % SIZE, side = (player === 'p1') ? 1 : -1;
+            occupy(idx, player, piece, context, true, idx); // 起点マス
+
+            let patterns = [...piece.p];
+
+            // 影響判定をまとめて行う内部関数
+            function applyInfluence(pList, isPromotedPhase) {
+                pList.forEach(p => {
+                    const pr = p[0] * side, pc = p[1] * side;
+                    let nr = r + pr, nc = c + pc;
+                    let isSlide = false;
+                    if (!isPromotedPhase) {
+                        if (piece.t === "R" || piece.t === "B") isSlide = true;
+                    } else if (isPromotedPhase && piece.pp) {
+                        if (piece.p.some(bp => bp[0] === p[0] && bp[1] === p[1])) isSlide = true;
+                    }
+
+                    let maxSteps = 1;
+                    if (isSlide) maxSteps = Infinity;
+                    else if (piece.t === "L" && !isPromotedPhase) {
+                        // End Phase: Lance range becomes infinite (Shogi-style)
+                        maxSteps = (totalMoves >= 12) ? Infinity : 2;
+                    }
+
+                    let steps = 0;
+                    while (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && steps < maxSteps) {
+                        const targetIdx = nr * SIZE + nc;
+                        const hitPiece = board[targetIdx] && board[targetIdx].isOrigin;
+                        occupy(targetIdx, player, piece, context, false, idx);
+                        if (hitPiece) break;
+                        nr += pr; nc += pc;
+                        steps++;
+                    }
+                });
+            }
+
+            // ベースの占領パターンを適用
+            applyInfluence(patterns, false);
+
+            // 過程で敵将を倒して「成」になった場合、すぐに追加パターンを適用する
+            if (context.promoted) {
+                let extraPatterns = piece.pp || [[-1, 0], [-1, 1], [-1, -1], [0, 1], [0, -1], [1, 0]];
+                applyInfluence(extraPatterns, true);
+
+                // 起点マスの情報を更新
+                if (board[idx]) {
+                    board[idx].isPromoted = true;
+                }
+            }
+        }
+
+        // 指定の起点に結びついた占領エリアを全てクリアする
+        function clearInfluence(originIdx) {
+            for (let j = 0; j < SIZE * SIZE; j++) {
+                if (board[j] && board[j].originIdx === originIdx) {
+                    board[j] = null;
+                }
+            }
+        }
+
+        /* --- Online Multiplayer (PeerJS) Logic --- */
+        function showOnlineMenu() {
+            document.getElementById('online-overlay').style.display = 'flex';
+            if (!peer) initPeer();
+        }
+
+        function hideOnlineMenu() {
+            document.getElementById('online-overlay').style.display = 'none';
+        }
+
+        function initPeer() {
+            peer = new Peer();
+            peer.on('open', (id) => {
+                document.getElementById('my-id-display').innerText = id;
+            });
+            peer.on('connection', (c) => {
+                handleConnection(c, 'p1'); // ホストは先手
+            });
+            peer.on('error', (err) => {
+                console.error(err);
+                alert("PeerJS Error: " + err.type);
+            });
+        }
+
+        function copyMyId() {
+            const id = document.getElementById('my-id-display').innerText;
+            if (id === 'Loading...') return;
+            navigator.clipboard.writeText(id).then(() => {
+                alert(TEXTS[lang].ol_copy);
+            });
+        }
+
+        function joinGame() {
+            const targetId = document.getElementById('peer-id-input').value;
+            if (!targetId || !peer) return;
+            document.getElementById('ol-setup').style.display = 'none';
+            document.getElementById('ol-connecting').style.display = 'block';
+            const c = peer.connect(targetId);
+            handleConnection(c, 'p2'); // ゲストは後手
+        }
+
+        function handleConnection(c, side) {
+            conn = c;
+            mySide = side;
+            conn.on('open', () => {
+                startGame('online', 1, side);
+            });
+            conn.on('data', (data) => {
+                if (data.type === 'move') {
+                    doMove(data.i, data);
+                } else if (data.type === 'restart') {
+                    location.reload();
+                }
+            });
+            conn.on('close', () => {
+                alert(TEXTS[lang].ol_lost);
+                location.reload();
+            });
+        }
+
+
+
+        function occupy(i, player, piece, context, isOrigin, originIdx) {
+            const opp = (player === 'p1') ? 'p2' : 'p1';
+            const r = Math.floor(i / SIZE);
+
+            // 成り判定の共通関数
+            function tryPromote(targetR, reasonKey) {
+                if (piece.pr && !context.promoted && !context.declined) {
+                    let originR = Math.floor(originIdx / SIZE);
+                    // 駒の初期位置（打った場所）が敵陣内なら成り可能
+                    let inZone = (player === 'p1') ? (originR <= 2) : (originR >= SIZE - 3);
+                    if (inZone) {
+                        let pieceName = lang === 'ja' ? piece.n : piece[lang];
+                        let promotedName = lang === 'ja' ? (piece.pn || '成' + piece.n) : (piece['p' + lang] || 'Promoted ' + pieceName);
+                        let reason = TEXTS[lang][reasonKey] || "Condition met";
+                        let msg = `[${reason}]\n` + TEXTS[lang].promoteConfirm.replace("{0}", pieceName).replace("{1}", promotedName);
+                        if (getSConfirm(msg)) {
+                            context.promoted = true;
+                            // Activar animación de salpicadura de agua al promocionar
+                            spawnPromotionSplash(originIdx);
+                            // 既にボードにある起点情報を更新（drop直後などの場合）
+                            if (board[originIdx]) {
+                                board[originIdx].isPromoted = true;
+                                board[originIdx].pn = piece.pn;
+                            }
+                            return true;
+                        } else {
+                            context.declined = true; // このターンはもう聞かない
+                        }
+                    }
+                }
+                return false;
+            }
+
+            if (isOrigin) {
+                // 起点マス: 既存の駒（起点）があればその影響を消去してから上書き
+                if (board[i] && board[i].isOrigin) {
+                    clearInfluence(board[i].originIdx);
+                }
+
+                // 打った瞬間の成り判定
+                tryPromote(r, 'p_place');
+
+                board[i] = {
+                    owner: player, n: piece.n, t: piece.t, img: piece.img, pimg: piece.pimg,
+                    p: piece.p, pp: piece.pp, isPromoted: context.promoted, pn: piece.pn,
+                    isOrigin: true, originIdx: i, powerUpD: context.powerUpD, powerUpA: context.powerUpA
+                };
+                return;
+            }
+
+            // 敵の起点駒を攻撃する場合
+            if (board[i] && board[i].isOrigin && board[i].owner === opp) {
+                let winRate = 0.6;
+                if (piece.t === "R" || piece.t === "B") {
+                    let distR = Math.abs(Math.floor(i / SIZE) - Math.floor(originIdx / SIZE));
+                    let distC = Math.abs((i % SIZE) - (originIdx % SIZE));
+                    if (Math.max(distR, distC) >= 3) {
+                        // End Phase: Starting from Turn 13 (totalMoves >= 12), remove long-distance penalty for Rook and Bishop
+                        if (totalMoves >= 12) {
+                            winRate = 0.6;
+                        } else {
+                            winRate = 0.3;
+                        }
+                    }
+                }
+                if (board[i].n === "金") winRate -= 0.4;
+                if (piece.n === "銀" && board[i].n === "金") {
+                    winRate += 0.4; // Silver vs Gold bonus: +40%
+                }
+
+                if (board[i].powerUpD) winRate -= 0.2;
+                if (context.powerUpA) winRate += 0.2;
+
+                if (getSRand() <= winRate) {
+                    if (board[i].t === "K") {
+                        // Knight's Special: 2 damage to King (End Phase only)
+                        let damage = (piece.t === "N" && totalMoves >= 12) ? 2 : 1;
+                        kingLives[opp] -= damage;
+                        if (kingLives[opp] > 0) {
+                            const survivingPlayerName = opp === 'p1' ? TEXTS[lang].p1 : TEXTS[lang].p2;
+                            kingDamageMessage = TEXTS[lang].kingSurvive.replace("{0}", survivingPlayerName).replace("{1}", kingLives[opp]);
+                            return;
+                        } else {
+                            clearInfluence(board[i].originIdx);
+                            setTimeout(() => declareKingDead(opp), 100);
+                        }
+                    } else {
+                        clearInfluence(board[i].originIdx);
+                    }
+
+                    // キャプチャによる成り判定
+                    tryPromote(r, 'p_capture');
+
+                    board[i] = { owner: player, n: piece.n, t: piece.t, img: piece.img, pimg: piece.pimg, p: piece.p, pp: piece.pp, isPromoted: context.promoted, pn: piece.pn, isOrigin: false, originIdx: originIdx, powerUpD: context.powerUpD, powerUpA: context.powerUpA };
+                }
+            } else if (!board[i] || board[i].owner === opp) {
+                // 空マスか敵の占領エリアを奪う
+                let flipped = board[i] && board[i].owner === opp;
+
+                // エリア奪取による成り判定
+                if (flipped) {
+                    tryPromote(r, 'p_flip');
+                }
+
+                board[i] = { owner: player, n: piece.n, t: piece.t, img: piece.img, pimg: piece.pimg, p: piece.p, pp: piece.pp, isPromoted: context.promoted, pn: piece.pn, isOrigin: false, originIdx: originIdx, powerUpD: context.powerUpD, powerUpA: context.powerUpA };
+            }
+        }
+
+        function updateUI() {
+            let p1 = 0, p2 = 0;
+            // Count total territory for Rook's spirit check
+            let currentTerritory = { p1: 0, p2: 0 };
+            board.forEach(c => { if (c) currentTerritory[c.owner]++; });
+
+            for (let i = 0; i < SIZE * SIZE; i++) {
+                const el = document.getElementById('cell' + i);
+                if (board[i]) {
+                    const b = board[i];
+                    el.className = `cell ${b.owner} ${b.isPromoted ? 'promoted' : ''}`;
+                    // 起点マスのみ画像を表示、占領エリアは色のみ
+                    let content = '';
+                    if (b.isOrigin) {
+                        let innerText = '';
+                        if (b.t === "K") {
+                            innerText += `(${kingLives[b.owner]})`;
+                        }
+                        if (b.powerUpD) innerText += "🛡️";
+                        if (b.powerUpA) innerText += "⚔️";
+
+                        // Special Ability Indicators
+                        let specialIcon = '';
+                        if (b.t === "N" && totalMoves >= 12) {
+                            const side = (b.owner === 'p1') ? 1 : -1;
+                            const br = Math.floor(i / SIZE), bc = i % SIZE;
+                            for (let p of b.p) {
+                                let tr = br + p[0] * side, tc = bc + p[1] * side;
+                                if (tr >= 0 && tr < SIZE && tc >= 0 && tc < SIZE) {
+                                    let targetCell = board[tr * SIZE + tc];
+                                    if (targetCell && targetCell.isOrigin && targetCell.t === "K" && targetCell.owner !== b.owner) {
+                                        specialIcon += "⚡";
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if ((b.t === "R" || b.t === "B") && totalMoves >= 12) specialIcon += "💫";
+
+                        let imgSrc = b.isPromoted ? b.pimg : b.img;
+                        content = `<div style="position:relative; width:100%; height:100%; display:flex; align-items:center; justify-content:center;">
+                            <img src="${imgSrc}" class="piece-img">
+                            <div style="position:absolute; bottom:-3px; right:0; font-size:12px; color:#fff; text-shadow:1px 1px 2px #000; z-index:2; pointer-events:none; font-weight:bold;">${innerText}</div>
+                            <div style="position:absolute; top:-2px; left:0; font-size:14px; z-index:3; pointer-events:none;">${specialIcon}</div>
+                        </div>`;
+                        el.innerHTML = content;
+                    } else {
+                        el.innerHTML = '';
+                    }
+                    b.owner === 'p1' ? p1++ : p2++;
+                } else {
+                    const el2 = document.getElementById('cell' + i);
+                    el2.className = 'cell';
+                    el2.innerHTML = '';
+                }
+            }
+            const t = TEXTS[lang];
+            let turnText = lang === 'ja' ? `${totalMoves + 1}${t.turn_num}` : `${t.turn_num}: ${totalMoves + 1}`;
+            document.getElementById('status-bar').innerText = `[${turnText}] ${t.p1Short}: ${p1} vs ${t.p2Short}: ${p2}`;
+        }
+
+        function finish() {
+            if (!active) return;
+            active = false;
+            let p1 = 0, p2 = 0;
+            board.forEach(s => { if (s && s.owner === 'p1') p1++; if (s && s.owner === 'p2') p2++; });
+            const t = TEXTS[lang];
+            let resultTxt = p1 > p2 ? t.win.replace("{0}", t.p1) : (p1 < p2 ? t.win.replace("{0}", t.p2) : t.draw);
+            document.getElementById('msg').innerHTML = `<b style="font-size:20px;">${resultTxt}</b>`;
+            document.getElementById('re-btn').style.display = "inline-block";
+            document.getElementById('log-btn').style.display = "inline-block";
+            
+            if (isTeachingMode && gameMode === 'cpu') {
+                showCoachReport();
+            }
+        }
+
+        function showCoachReport() {
+            const t = TEXTS[lang];
+            let report = [];
+            
+            // 1. Good Points
+            if (teachingStats.good > 3 || teachingStats.captures > 3) {
+                report.push(t.report_good[Math.floor(Math.random() * t.report_good.length)]);
+            } else {
+                report.push(t.report_good[0]); // Default good
+            }
+            
+            // 2. Improvement Points
+            if (teachingStats.bad > 2) {
+                report.push(t.report_bad[Math.floor(Math.random() * t.report_bad.length)]);
+            } else {
+                report.push(t.report_bad[1]); // Default advice
+            }
+            
+            // 3. Overall Advice
+            report.push(t.report_advice[Math.floor(Math.random() * t.report_advice.length)]);
+            
+            // 4. Best & Worst Moves
+            let bestMoveLog = null, worstMoveLog = null;
+            if (playerMoveStats.length > 0) {
+                // Best move: highest score relative to best possible (closest to 0 delta) AND high absolute score
+                // Actually, simply finding the move with highest absolute score is good for "Best Move" highlight
+                // But finding "Best Play" means finding where user matched CPU best.
+                // Let's pick the move with highest Score that was also isBest.
+                let bestCandidates = playerMoveStats.filter(m => m.isBest);
+                if (bestCandidates.length > 0) {
+                    bestCandidates.sort((a, b) => b.score - a.score);
+                    bestMoveLog = bestCandidates[0];
+                }
+                
+                // Worst move: lowest delta (biggest mistake)
+                let worstCandidates = playerMoveStats.filter(m => m.delta < -5);
+                if (worstCandidates.length > 0) {
+                    worstCandidates.sort((a, b) => a.delta - b.delta); // Ascending delta (most negative first)
+                    worstMoveLog = worstCandidates[0];
+                }
+            }
+
+            let extraHtml = "";
+            if (bestMoveLog) {
+                let col = SIZE - (bestMoveLog.to % SIZE);
+                let row = Math.floor(bestMoveLog.to / SIZE) + 1;
+                let coord = `(${col}, ${row})`;
+                extraHtml += `<div style="margin-top:5px; color:#ffff00;">${t.review_best} ${bestMoveLog.piece} -> ${coord}</div>`;
+            }
+            if (worstMoveLog) {
+                let col = SIZE - (worstMoveLog.to % SIZE);
+                let row = Math.floor(worstMoveLog.to / SIZE) + 1;
+                let coord = `(${col}, ${row})`;
+                extraHtml += `<div style="margin-top:2px; color:#ff9900;">${t.review_worst} ${worstMoveLog.piece} -> ${coord}</div>`;
+            }
+
+            const reportHtml = `<div style="color:#00ff00; font-weight:bold; margin-bottom:5px;">${t.report_title}</div>` + 
+                               report.map(r => `<div>・${r}</div>`).join('') + extraHtml;
+            
+            document.getElementById('coach-msg').innerHTML = reportHtml;
+            document.getElementById('teaching-ui').style.display = 'block';
+            
+            // Console Log Output
+            console.log("=== TINKU SHOGI GAME LOG ===");
+            console.table(gameLog);
+            console.log("=== PLAYER STATS ===");
+            console.table(playerMoveStats);
+            console.log(t.log_saved);
+        }
+
+        function showGameLogUI() {
+            const t = TEXTS[lang];
+            const title = document.getElementById('log-title');
+            const content = document.getElementById('log-content');
+            
+            title.innerText = t.log_title;
+            content.innerHTML = "";
+            
+            if (gameLog.length === 0) {
+                content.innerText = "No moves recorded.";
+                return;
+            }
+
+            // Find the single best and single worst move for the player
+            // Best: Highest absolute score among "isBest" moves (showing peak performance)
+            // Worst: Lowest delta (showing biggest blunder)
+            let bestMoveLog = null, worstMoveLog = null;
+            if (playerMoveStats.length > 0) {
+                // Best move logic:
+                // Find moves where delta is ~0 (isBest)
+                let bestCandidates = playerMoveStats.filter(m => m.isBest);
+                if (bestCandidates.length > 0) {
+                    // Sort by score descending to find "most impactful best move"
+                    bestCandidates.sort((a, b) => b.score - a.score);
+                    bestMoveLog = bestCandidates[0];
+                }
+
+                // Worst move logic:
+                // Find move with lowest delta
+                let worstCandidates = [...playerMoveStats];
+                worstCandidates.sort((a, b) => a.delta - b.delta); // Ascending (most negative first)
+                if (worstCandidates.length > 0 && worstCandidates[0].delta < -2) {
+                    worstMoveLog = worstCandidates[0];
+                }
+            }
+
+            let html = `<table style="width:100%; border-collapse:collapse; font-family:monospace; font-size:12px;">
+                <tr style="border-bottom:1px solid #555; color:#aaa;">
+                    <th style="text-align:left; padding:4px;">#</th>
+                    <th style="text-align:left; padding:4px;">Player</th>
+                    <th style="text-align:left; padding:4px;">Move</th>
+                    <th style="text-align:right; padding:4px;">Eval (Diff)</th>
+                </tr>`;
+
+            gameLog.forEach(log => {
+                const pName = (log.player === 'p1') ? t.p1Short : t.p2Short;
+                const col = SIZE - (log.to % SIZE);
+                const row = Math.floor(log.to / SIZE) + 1;
+                const coord = `(${col}, ${row})`;
+                
+                let rowStyle = "border-bottom:1px solid #333;";
+                let moveText = `${log.piece}${coord}`;
+                let evalText = "";
+                
+                if (log.score !== undefined) {
+                    evalText = log.score.toFixed(0);
+                    if (log.delta !== undefined) {
+                        let deltaStr = log.delta.toFixed(0);
+                        if (log.delta > 0) deltaStr = "+" + deltaStr;
+                        
+                        let deltaColor = "#888";
+                        if (log.delta < -5) deltaColor = "#ff6666"; // Bad
+                        else if (log.delta > -0.5) deltaColor = "#66ff66"; // Good
+                        
+                        evalText += ` <span style="color:${deltaColor}; font-size:10px;">(${deltaStr})</span>`;
+                    }
+                }
+                
+                // Highlight Best/Worst
+                if (log === bestMoveLog) {
+                    rowStyle += "background:rgba(0, 255, 0, 0.2);";
+                    moveText += " <span style='color:#00ff00; font-weight:bold;'>★BEST</span>";
+                } else if (log === worstMoveLog) {
+                    rowStyle += "background:rgba(255, 0, 0, 0.2);";
+                    moveText += " <span style='color:#ff0000; font-weight:bold;'>⚠WORST</span>";
+                } else if (log.isBest) {
+                    // Minor highlight for other good moves
+                    rowStyle += "background:rgba(0, 255, 0, 0.05);";
+                } else if (log.isWorst) {
+                    rowStyle += "background:rgba(255, 0, 0, 0.05);";
+                }
+
+                html += `<tr style="${rowStyle}">
+                    <td style="padding:4px; color:#888;">${log.turn}</td>
+                    <td style="padding:4px; color:${log.player==='p1'?'#ff9999':'#99ccff'}; font-weight:bold;">${pName}</td>
+                    <td style="padding:4px;">${moveText}</td>
+                    <td style="padding:4px; text-align:right;">${evalText}</td>
+                </tr>`;
+            });
+            html += "</table>";
+            
+            content.innerHTML = html;
+            document.getElementById('log-overlay').style.display = 'flex';
+        }
+
+        // --- Teaching Mode Functions ---
+
+        function getHint(level) {
+            // Deprecated: Hint buttons removed by user request
+            return "";
+        }
+
+        function showHint(level) {
+            // Deprecated: Hint buttons removed by user request
+        }
+
+        // --- New Message Logic ---
+        function updateCoachMessage(type, param = "") {
+            if (!isTeachingMode || !active) return;
+            const t = TEXTS[lang];
+            let msgs = [];
+            
+            if (type === 'intro') msgs = t.msg_intro;
+            else if (type === 'praise') msgs = t.msg_praise;
+            else if (type === 'normal') msgs = t.msg_normal;
+            else if (type === 'warning') msgs = t.msg_warning;
+            else if (type === 'capture') msgs = t.msg_capture;
+            else if (type === 'check') msgs = t.msg_check;
+            
+            if (!msgs || msgs.length === 0) return;
+            
+            const msgTemplate = msgs[Math.floor(Math.random() * msgs.length)];
+            const msg = msgTemplate.replace("{0}", param);
+            
+            const msgEl = document.getElementById('coach-msg');
+            msgEl.innerText = msg;
+            
+            // Style update based on type
+            if (type === 'praise' || type === 'capture' || type === 'check') {
+                msgEl.style.color = "#00ff00";
+                msgEl.style.fontWeight = "bold";
+            } else if (type === 'warning') {
+                msgEl.style.color = "#ff9900";
+                msgEl.style.fontWeight = "normal";
+            } else {
+                msgEl.style.color = "#fff";
+                msgEl.style.fontWeight = "normal";
+            }
+        }
+
+        function checkPraise(moveIdx, pieceIdx) {
+            // Deprecated, logic moved to doMove
+        }
+
+        // 初回ロード時にテキストをセット
+        resizeLeafCanvas();
+        window.addEventListener('resize', resizeLeafCanvas);
+        requestAnimationFrame(animateLeaves);
+        initAudio();
+        document.addEventListener('mousedown', () => { initAudio(); safePlayBgm(); }, { once: true });
+        document.addEventListener('touchstart', () => { initAudio(); safePlayBgm(); }, { once: true });
+        changeLang('ja');
+    </script>
+</body>
+
+</html>
